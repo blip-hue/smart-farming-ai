@@ -1,7 +1,7 @@
 import io
 import os
 import json
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_from_directory
 from google import genai
 from PIL import Image
 import requests
@@ -24,10 +24,12 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # DATA STORAGE FILE
 # =======================
 DATA_FILE = "data/logs.json"
+IMAGE_FOLDER = "data/images"
 
+os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
 # =======================
-# HOME ROUTE (API CHECK)
+# HOME ROUTE
 # =======================
 @app.route("/", methods=["GET"])
 def home():
@@ -35,7 +37,7 @@ def home():
 
 
 # =======================
-# DASHBOARD ROUTE (FIXED + SAFE)
+# DASHBOARD ROUTE
 # =======================
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
@@ -52,6 +54,14 @@ def dashboard():
 
 
 # =======================
+# IMAGE SERVER ROUTE
+# =======================
+@app.route("/image/<filename>")
+def get_image(filename):
+    return send_from_directory(IMAGE_FOLDER, filename)
+
+
+# =======================
 # MAIN AI ANALYSIS
 # =======================
 @app.route("/analyze", methods=["POST"])
@@ -64,6 +74,13 @@ def analyze():
             return jsonify({"error": "No image received"}), 400
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        # =======================
+        # SAVE IMAGE FIRST
+        # =======================
+        image_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+        image_path = os.path.join(IMAGE_FOLDER, image_filename)
+        image.save(image_path)
 
         prompt = """
 You are an agricultural expert.
@@ -107,7 +124,8 @@ Keep response clear and structured.
         entry = {
             "time": scan_time,
             "result": result,
-            "confidence": confidence
+            "confidence": confidence,
+            "image": image_filename
         }
 
         try:
@@ -138,7 +156,8 @@ Keep response clear and structured.
             "status": "success",
             "result": result,
             "scan_time": scan_time,
-            "confidence": confidence
+            "confidence": confidence,
+            "image": image_filename
         })
 
     except Exception as e:

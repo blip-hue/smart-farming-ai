@@ -43,18 +43,19 @@
             padding: 10px;
             border-radius: 8px;
 
-            /* ✅ FIX FOR FULL AI TEXT DISPLAY */
             white-space: pre-wrap;
             word-wrap: break-word;
             overflow-wrap: break-word;
 
-            /* optional but makes it look clean */
-            line-height: 1.5;
-            font-size: 14px;
-
-            /* scroll if very long */
             max-height: 350px;
             overflow-y: auto;
+        }
+
+        img {
+            width: 100%;
+            max-width: 400px;
+            border-radius: 10px;
+            margin-top: 10px;
         }
 
         .empty {
@@ -73,9 +74,16 @@
 
     {% for log in logs|reverse %}
     <div class="card">
+
         <div class="time">⏰ {{ log.time }}</div>
+
+        {% if log.image %}
+            <img src="/image/{{ log.image }}">
+        {% endif %}
+
         <div class="confidence">📊 Confidence: {{ log.confidence }}</div>
         <div class="result">{{ log.result }}</div>
+
     </div>
     {% endfor %}
 
