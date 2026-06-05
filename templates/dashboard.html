@@ -2,6 +2,9 @@
 <html>
 <head>
     <title>Smart Farming Dashboard</title>
+
+    <meta http-equiv="refresh" content="30">
+
     <style>
         body {
             font-family: Arial;
@@ -11,6 +14,7 @@
 
         h1 {
             text-align: center;
+            margin-bottom: 20px;
         }
 
         .card {
@@ -23,18 +27,26 @@
         }
 
         .time {
-            color: gray;
+            color: #666;
             font-size: 13px;
         }
 
         .confidence {
-            color: green;
+            color: #1a7f37;
             font-weight: bold;
+            margin-top: 5px;
         }
 
         .result {
             margin-top: 10px;
             white-space: pre-line;
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 8px;
+
+            /* IMPORTANT FOR LONG AI TEXT */
+            max-height: 300px;
+            overflow-y: auto;
         }
 
         .empty {
@@ -51,7 +63,7 @@
 
 {% if logs and logs|length > 0 %}
 
-    {% for log in logs %}
+    {% for log in logs|reverse %}
     <div class="card">
         <div class="time">⏰ {{ log.time }}</div>
         <div class="confidence">📊 Confidence: {{ log.confidence }}</div>
