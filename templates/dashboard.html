@@ -36,6 +36,12 @@
             margin-top: 10px;
             white-space: pre-line;
         }
+
+        .empty {
+            text-align: center;
+            color: gray;
+            margin-top: 30px;
+        }
     </style>
 </head>
 
@@ -43,13 +49,23 @@
 
 <h1>🌿 Smart Farming AI Dashboard</h1>
 
-{% for log in logs %}
-<div class="card">
-    <div class="time">⏰ {{ log.time }}</div>
-    <div class="confidence">📊 Confidence: {{ log.confidence }}</div>
-    <div class="result">{{ log.result }}</div>
-</div>
-{% endfor %}
+{% if logs and logs|length > 0 %}
+
+    {% for log in logs %}
+    <div class="card">
+        <div class="time">⏰ {{ log.time }}</div>
+        <div class="confidence">📊 Confidence: {{ log.confidence }}</div>
+        <div class="result">{{ log.result }}</div>
+    </div>
+    {% endfor %}
+
+{% else %}
+
+    <div class="empty">
+        No data yet. Run ESP32 scan first.
+    </div>
+
+{% endif %}
 
 </body>
 </html>

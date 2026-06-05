@@ -35,13 +35,16 @@ def home():
 
 
 # =======================
-# DASHBOARD ROUTE (NEW)
+# DASHBOARD ROUTE (FIXED + SAFE)
 # =======================
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
     try:
-        with open(DATA_FILE, "r") as f:
-            logs = json.load(f)
+        if not os.path.exists(DATA_FILE):
+            logs = []
+        else:
+            with open(DATA_FILE, "r") as f:
+                logs = json.load(f)
     except:
         logs = []
 
@@ -108,8 +111,11 @@ Keep response clear and structured.
         }
 
         try:
-            with open(DATA_FILE, "r") as f:
-                data = json.load(f)
+            if not os.path.exists(DATA_FILE):
+                data = []
+            else:
+                with open(DATA_FILE, "r") as f:
+                    data = json.load(f)
         except:
             data = []
 
