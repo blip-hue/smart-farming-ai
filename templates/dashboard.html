@@ -1,99 +1,99 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Smart Farming Dashboard</title>
+    <title>Smart Farming AI Dashboard</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
 
     <meta http-equiv="refresh" content="30">
-
-    <style>
-        body {
-            font-family: Arial;
-            background: #f4f6f8;
-            padding: 20px;
-        }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-
-        .card {
-            background: white;
-            padding: 15px;
-            margin: 15px auto;
-            width: 80%;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-
-        .time {
-            color: #666;
-            font-size: 13px;
-        }
-
-        .confidence {
-            color: #1a7f37;
-            font-weight: bold;
-            margin-top: 5px;
-        }
-
-        .result {
-            margin-top: 10px;
-            background: #f9f9f9;
-            padding: 10px;
-            border-radius: 8px;
-
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-
-            max-height: 350px;
-            overflow-y: auto;
-        }
-
-        img {
-            width: 100%;
-            max-width: 400px;
-            border-radius: 10px;
-            margin-top: 10px;
-        }
-
-        .empty {
-            text-align: center;
-            color: gray;
-            margin-top: 30px;
-        }
-    </style>
 </head>
 
-<body>
+<body class="bg-gray-100">
 
-<h1>🌿 Smart Farming AI Dashboard</h1>
+<div class="flex">
 
-{% if logs and logs|length > 0 %}
+    <!-- SIDEBAR -->
+    <div class="w-20 md:w-64 bg-gray-900 min-h-screen text-white p-4">
 
-    {% for log in logs|reverse %}
-    <div class="card">
+        <h1 class="text-xl font-bold mb-8 hidden md:block">
+            🌿 SmartFarm AI
+        </h1>
 
-        <div class="time">⏰ {{ log.time }}</div>
+        <div class="space-y-6 text-sm">
 
-        {% if log.image %}
-            <img src="/image/{{ log.image }}">
-        {% endif %}
+            <div class="p-2 bg-gray-800 rounded">📊 Dashboard</div>
+            <div class="p-2 hover:bg-gray-800 rounded">📷 Scans</div>
+            <div class="p-2 hover:bg-gray-800 rounded">📁 History</div>
+            <div class="p-2 hover:bg-gray-800 rounded">⚙ Settings</div>
 
-        <div class="confidence">📊 Confidence: {{ log.confidence }}</div>
-        <div class="result">{{ log.result }}</div>
-
-    </div>
-    {% endfor %}
-
-{% else %}
-
-    <div class="empty">
-        No data yet. Run ESP32 scan first.
+        </div>
     </div>
 
-{% endif %}
+    <!-- MAIN -->
+    <div class="flex-1 p-6">
+
+        <!-- HEADER -->
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold">Analytics Dashboard</h1>
+            <input class="p-2 rounded border w-1/3" placeholder="Search...">
+        </div>
+
+        <!-- TOP CARDS -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+
+            <div class="bg-white p-4 rounded-xl shadow">
+                <p class="text-gray-500">Total Scans</p>
+                <h2 class="text-2xl font-bold">{{ logs|length }}</h2>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow">
+                <p class="text-gray-500">Latest Confidence</p>
+                <h2 class="text-2xl font-bold">
+                    {% if logs|length > 0 %}
+                        {{ logs[-1].confidence }}
+                    {% else %}
+                        --
+                    {% endif %}
+                </h2>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow">
+                <p class="text-gray-500">System Status</p>
+                <h2 class="text-2xl font-bold text-green-500">Active</h2>
+            </div>
+
+        </div>
+
+        <!-- LOGS -->
+        <div class="space-y-4">
+
+            {% for log in logs|reverse %}
+            <div class="bg-white p-4 rounded-xl shadow">
+
+                <div class="text-sm text-gray-500">
+                    ⏰ {{ log.time }}
+                </div>
+
+                {% if log.image %}
+                <img src="/image/{{ log.image }}"
+                     class="mt-3 rounded-lg max-w-md">
+                {% endif %}
+
+                <div class="mt-2 text-green-600 font-bold">
+                    📊 {{ log.confidence }}
+                </div>
+
+                <div class="mt-2 text-gray-700 whitespace-pre-wrap">
+                    {{ log.result }}
+                </div>
+
+            </div>
+            {% endfor %}
+
+        </div>
+
+    </div>
+</div>
 
 </body>
 </html>
