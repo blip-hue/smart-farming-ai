@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Smart Farming Dashboard</title>
+    <style>
+        body {
+            font-family: Arial;
+            background: #f4f6f8;
+            padding: 20px;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .card {
+            background: white;
+            padding: 15px;
+            margin: 15px auto;
+            width: 80%;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .time {
+            color: gray;
+            font-size: 13px;
+        }
+
+        .confidence {
+            color: green;
+            font-weight: bold;
+        }
+
+        .result {
+            margin-top: 10px;
+            white-space: pre-line;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>🌿 Smart Farming AI Dashboard</h1>
+
+{% for log in logs %}
+<div class="card">
+    <div class="time">⏰ {{ log.time }}</div>
+    <div class="confidence">📊 Confidence: {{ log.confidence }}</div>
+    <div class="result">{{ log.result }}</div>
+</div>
+{% endfor %}
+
+</body>
+</html>

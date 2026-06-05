@@ -1,6 +1,7 @@
 import io
 import os
-from flask import Flask, request, jsonify
+import json
+from flask import Flask, request, jsonify, render_template
 from google import genai
 from PIL import Image
 import requests
@@ -20,11 +21,31 @@ if not GEMINI_API_KEY:
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # =======================
-# HOME ROUTE
+# DATA STORAGE FILE
+# =======================
+DATA_FILE = "data/logs.json"
+
+
+# =======================
+# HOME ROUTE (API CHECK)
 # =======================
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "OK", "message": "Smart Farming AI Running"})
+
+
+# =======================
+# DASHBOARD ROUTE (NEW)
+# =======================
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    try:
+        with open(DATA_FILE, "r") as f:
+            logs = json.load(f)
+    except:
+        logs = []
+
+    return render_template("dashboard.html", logs=logs)
 
 
 # =======================
@@ -73,9 +94,29 @@ Keep response clear and structured.
         scan_time = datetime.now(malaysia_time).strftime("%Y-%m-%d %H:%M:%S")
 
         # =======================
-        # SIMPLE CONFIDENCE SCORE (FYP SAFE)
+        # SIMPLE CONFIDENCE SCORE
         # =======================
         confidence = "90%" if len(result) > 100 else "75%"
+
+        # =======================
+        # SAVE TO JSON DATABASE
+        # =======================
+        entry = {
+            "time": scan_time,
+            "result": result,
+            "confidence": confidence
+        }
+
+        try:
+            with open(DATA_FILE, "r") as f:
+                data = json.load(f)
+        except:
+            data = []
+
+        data.append(entry)
+
+        with open(DATA_FILE, "w") as f:
+            json.dump(data, f, indent=2)
 
         # =======================
         # OPTIONAL: BLYNK UPDATE
