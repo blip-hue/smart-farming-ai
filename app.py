@@ -1,12 +1,10 @@
 import io
 import os
-import uuid
-from datetime import datetime
-
 from flask import Flask, request, jsonify
 from google import genai
 from PIL import Image
 import requests
+from datetime import datetime, timezone, timedelta
 
 app = Flask(__name__)
 
@@ -16,50 +14,21 @@ app = Flask(__name__)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 BLYNK_TOKEN = os.getenv("BLYNK_TOKEN")
 
+if not GEMINI_API_KEY:
+    raise Exception("Missing GEMINI_API_KEY in Render environment variables")
+
 client = genai.Client(api_key=GEMINI_API_KEY)
-
-# =======================
-# SAVE FOLDER (Render safe)
-# =======================
-SAVE_DIR = "saved_images"
-os.makedirs(SAVE_DIR, exist_ok=True)
-
 
 # =======================
 # HOME ROUTE
 # =======================
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({
-        "status": "OK",
-        "message": "Smart Farming AI Server Running"
-    })
+    return jsonify({"status": "OK", "message": "Smart Farming AI Running"})
 
 
 # =======================
-# CONFIDENCE ESTIMATION
-# (simple heuristic)
-# =======================
-def estimate_confidence(text: str) -> int:
-    text_lower = text.lower()
-
-    score = 70  # base confidence
-
-    keywords = ["deficiency", "chlorosis", "disease", "nutrient"]
-    if any(k in text_lower for k in keywords):
-        score += 15
-
-    if "uncertain" in text_lower or "difficult" in text_lower:
-        score -= 20
-
-    if len(text) > 120:
-        score += 10
-
-    return max(40, min(score, 98))
-
-
-# =======================
-# ANALYZE ROUTE
+# MAIN AI ANALYSIS
 # =======================
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -70,21 +39,6 @@ def analyze():
         if not image_bytes or len(image_bytes) < 100:
             return jsonify({"error": "No image received"}), 400
 
-        # =======================
-        # TIMESTAMP
-        # =======================
-        scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # =======================
-        # SAVE IMAGE (FYP PROOF)
-        # =======================
-        filename = f"{uuid.uuid4().hex}.jpg"
-        filepath = os.path.join(SAVE_DIR, filename)
-
-        with open(filepath, "wb") as f:
-            f.write(image_bytes)
-
-        # Decode image for AI
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         prompt = """
@@ -94,53 +48,50 @@ Analyze the plant leaf image.
 
 Return:
 Diagnosis:
-Symptoms:
 Cause:
+Symptoms:
 Solution:
 
-Be clear and structured.
+Keep response clear and structured.
 """
 
-        # =======================
-        # GEMINI CALL
-        # =======================
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[image, prompt],
             config={
                 "temperature": 0.2,
-                "max_output_tokens": 1024
+                "max_output_tokens": 2048
             }
         )
 
         result = response.text.strip()
 
         # =======================
-        # CONFIDENCE SCORE
+        # MALAYSIA TIMESTAMP FIX
         # =======================
-        confidence = estimate_confidence(result)
-
-        print("AI RESULT:", result)
+        malaysia_time = timezone(timedelta(hours=8))
+        scan_time = datetime.now(malaysia_time).strftime("%Y-%m-%d %H:%M:%S")
 
         # =======================
-        # BLYNK (OPTIONAL)
+        # SIMPLE CONFIDENCE SCORE (FYP SAFE)
+        # =======================
+        confidence = "90%" if len(result) > 100 else "75%"
+
+        # =======================
+        # OPTIONAL: BLYNK UPDATE
         # =======================
         if BLYNK_TOKEN:
             try:
                 url = f"https://blynk.cloud/external/api/update?token={BLYNK_TOKEN}&v1={result}"
                 requests.get(url, timeout=5)
-            except:
-                pass
+            except Exception as e:
+                print("Blynk error:", e)
 
-        # =======================
-        # RESPONSE
-        # =======================
         return jsonify({
             "status": "success",
-            "scan_time": scan_time,
-            "confidence": f"{confidence}%",
             "result": result,
-            "image_saved_as": filename
+            "scan_time": scan_time,
+            "confidence": confidence
         })
 
     except Exception as e:
@@ -149,7 +100,7 @@ Be clear and structured.
 
 
 # =======================
-# RUN
+# RUN SERVER
 # =======================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
