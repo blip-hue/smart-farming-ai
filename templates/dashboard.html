@@ -39,13 +39,21 @@
 
         .result {
             margin-top: 10px;
-            white-space: pre-line;
             background: #f9f9f9;
             padding: 10px;
             border-radius: 8px;
 
-            /* IMPORTANT FOR LONG AI TEXT */
-            max-height: 300px;
+            /* ✅ FIX FOR FULL AI TEXT DISPLAY */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+
+            /* optional but makes it look clean */
+            line-height: 1.5;
+            font-size: 14px;
+
+            /* scroll if very long */
+            max-height: 350px;
             overflow-y: auto;
         }
 
