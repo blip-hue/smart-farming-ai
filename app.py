@@ -4,170 +4,192 @@ import json
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from google import genai
 from PIL import Image
-import requests
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
+from supabase import create_client
 
 app = Flask(__name__)
 
-# =======================
-# ENV VARIABLES (RENDER)
-# =======================
+# ================= ENV =================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-BLYNK_TOKEN = os.getenv("BLYNK_TOKEN")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-if not GEMINI_API_KEY:
-    raise Exception("Missing GEMINI_API_KEY in Render environment variables")
+# ================= SAFE INIT =================
+client = None
+supabase = None
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+if GEMINI_API_KEY:
+    client = genai.Client(api_key=GEMINI_API_KEY)
+else:
+    print("⚠ WARNING: GEMINI_API_KEY missing (AI disabled)")
 
-# =======================
-# DATA STORAGE FILE
-# =======================
-DATA_FILE = "data/logs.json"
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+else:
+    print("⚠ WARNING: Supabase credentials missing (DB disabled)")
+
+# ================= STORAGE =================
 IMAGE_FOLDER = "data/images"
-
 os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
-# =======================
-# HOME ROUTE
-# =======================
+# ================= HOME =================
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"status": "OK", "message": "Smart Farming AI Running"})
+    return jsonify({"status": "OK", "project": "Smart Farming AI"})
 
 
-# =======================
-# DASHBOARD ROUTE
-# =======================
+# ================= DASHBOARD =================
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
-    try:
-        if not os.path.exists(DATA_FILE):
+
+    if supabase:
+        try:
+            response = (
+                supabase.table("scans")
+                .select("*")
+                .order("time", desc=True)   # FIXED (safer than id)
+                .execute()
+            )
+            logs = response.data or []
+        except Exception as e:
+            print("Supabase fetch error:", e)
             logs = []
-        else:
-            with open(DATA_FILE, "r") as f:
-                logs = json.load(f)
-    except:
-        logs = []
+    else:
+        logs = [
+            {
+                "time": "2026-06-24 14:00:00",
+                "result": json.dumps({
+                    "status": "deficiency",
+                    "diagnosis": "Iron deficiency",
+                    "cause": "Low soil iron",
+                    "solution": "Add iron fertilizer"
+                }),
+                "image": "test.jpg"
+            }
+        ]
 
     return render_template("dashboard.html", logs=logs)
 
 
-# =======================
-# IMAGE SERVER ROUTE
-# =======================
+# ================= IMAGE =================
 @app.route("/image/<filename>")
 def get_image(filename):
     return send_from_directory(IMAGE_FOLDER, filename)
 
 
-# =======================
-# MAIN AI ANALYSIS
-# =======================
+# ================= ANALYZE =================
 @app.route("/analyze", methods=["POST"])
 def analyze():
 
     try:
         image_bytes = request.data
 
-        if not image_bytes or len(image_bytes) < 100:
-            return jsonify({"error": "No image received"}), 400
+        if not image_bytes:
+            return jsonify({"status": "error", "message": "No image"}), 400
+
+        device_type = request.headers.get("X-Device-Type", "leaf")
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # =======================
-        # SAVE IMAGE FIRST
-        # =======================
-        image_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
-        image_path = os.path.join(IMAGE_FOLDER, image_filename)
+        filename = datetime.now().strftime("%Y%m%d_%H%M%S") + ".jpg"
+        image_path = os.path.join(IMAGE_FOLDER, filename)
         image.save(image_path)
 
-        prompt = """
-You are an agricultural expert.
+        # ================= PROMPT =================
+        if device_type == "chili_cam":
+            prompt = """
+Analyze this chili fruit image.
 
-Analyze the plant leaf image.
+Return ONLY valid JSON:
+{
+  "status": "healthy" or "disease",
+  "diagnosis": "short disease name or healthy",
+  "cause": "short cause",
+  "solution": "short solution"
+}
+"""
+        else:
+            prompt = """
+Analyze this plant leaf image.
 
-Return:
-Diagnosis:
-Cause:
-Symptoms:
-Solution:
-
-Keep response clear and structured.
+Return ONLY valid JSON:
+{
+  "status": "healthy" or "deficiency",
+  "diagnosis": "short deficiency name or healthy",
+  "cause": "short cause",
+  "solution": "short solution"
+}
 """
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[image, prompt],
-            config={
-                "temperature": 0.2,
-                "max_output_tokens": 2048
+        # ================= GEMINI =================
+        if client:
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[image, prompt]
+                )
+
+                raw = response.text.strip()
+
+                try:
+                    result_json = json.loads(raw)
+                except json.JSONDecodeError:
+                    result_json = {
+                        "status": "unknown",
+                        "diagnosis": raw,
+                        "cause": "",
+                        "solution": ""
+                    }
+
+            except Exception as e:
+                print("Gemini Error:", e)
+                result_json = {
+                    "status": "error",
+                    "diagnosis": "AI failed",
+                    "cause": "",
+                    "solution": ""
+                }
+        else:
+            result_json = {
+                "status": "debug",
+                "diagnosis": "No Gemini key (test mode)",
+                "cause": "",
+                "solution": ""
             }
-        )
 
-        result = response.text.strip()
+        time_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # =======================
-        # MALAYSIA TIMESTAMP FIX
-        # =======================
-        malaysia_time = timezone(timedelta(hours=8))
-        scan_time = datetime.now(malaysia_time).strftime("%Y-%m-%d %H:%M:%S")
-
-        # =======================
-        # SIMPLE CONFIDENCE SCORE
-        # =======================
-        confidence = "90%" if len(result) > 100 else "75%"
-
-        # =======================
-        # SAVE TO JSON DATABASE
-        # =======================
         entry = {
-            "time": scan_time,
-            "result": result,
-            "confidence": confidence,
-            "image": image_filename
+            "time": time_now,
+            "result": json.dumps(result_json),
+            "status": result_json.get("status", "unknown"),
+            "diagnosis": result_json.get("diagnosis", ""),
+            "image": filename,
+            "device_type": device_type
         }
 
-        try:
-            if not os.path.exists(DATA_FILE):
-                data = []
-            else:
-                with open(DATA_FILE, "r") as f:
-                    data = json.load(f)
-        except:
-            data = []
-
-        data.append(entry)
-
-        with open(DATA_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-
-        # =======================
-        # OPTIONAL: BLYNK UPDATE
-        # =======================
-        if BLYNK_TOKEN:
+        if supabase:
             try:
-                url = f"https://blynk.cloud/external/api/update?token={BLYNK_TOKEN}&v1={result}"
-                requests.get(url, timeout=5)
+                supabase.table("scans").insert(entry).execute()
             except Exception as e:
-                print("Blynk error:", e)
+                print("Supabase Insert Error:", e)
+
+        print(f"Saved Scan [{device_type}] : {filename}")
 
         return jsonify({
             "status": "success",
-            "result": result,
-            "scan_time": scan_time,
-            "confidence": confidence,
-            "image": image_filename
+            "device_type": device_type,
+            "result": result_json,
+            "image": filename,
+            "time": time_now
         })
 
     except Exception as e:
-        print("ERROR:", str(e))
-        return jsonify({"error": str(e)}), 500
+        print("SERVER ERROR:", str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# =======================
-# RUN SERVER
-# =======================
+# ================= RUN (RENDER FIX) =================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

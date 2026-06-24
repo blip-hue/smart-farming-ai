@@ -4,96 +4,187 @@
     <title>Smart Farming AI Dashboard</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <meta http-equiv="refresh" content="30">
+    <meta http-equiv="refresh" content="20">
 </head>
 
-<body class="bg-gray-100">
+<body class="bg-[#f7faf8] text-black">
 
-<div class="flex">
+<div class="flex min-h-screen">
 
     <!-- SIDEBAR -->
-    <div class="w-20 md:w-64 bg-gray-900 min-h-screen text-white p-4">
+    <aside class="w-[170px] bg-[#202932] text-white px-2 py-11">
+        <nav class="space-y-3 text-sm">
+            <div class="flex items-center gap-3 rounded-md bg-white/15 px-3 py-3 shadow">
+                <span class="text-xl">▦</span>
+                <span class="font-semibold">Dashboard</span>
+            </div>
 
-        <h1 class="text-xl font-bold mb-8 hidden md:block">
-            🌿 SmartFarm AI
-        </h1>
-
-        <div class="space-y-6 text-sm">
-
-            <div class="p-2 bg-gray-800 rounded">📊 Dashboard</div>
-            <div class="p-2 hover:bg-gray-800 rounded">📷 Scans</div>
-            <div class="p-2 hover:bg-gray-800 rounded">📁 History</div>
-            <div class="p-2 hover:bg-gray-800 rounded">⚙ Settings</div>
-
-        </div>
-    </div>
+            <div class="flex items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/10">
+                <span class="text-lg">↺</span>
+                <span>Scan History</span>
+            </div>
+        </nav>
+    </aside>
 
     <!-- MAIN -->
-    <div class="flex-1 p-6">
+    <main class="flex-1 px-4 py-6">
 
         <!-- HEADER -->
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold">Analytics Dashboard</h1>
-            <input class="p-2 rounded border w-1/3" placeholder="Search...">
-        </div>
+        <section class="flex items-center justify-between border-b border-gray-300 pb-3">
+            <h1 class="text-2xl font-semibold tracking-tight">
+                Nutrient Deficiency Detection
+            </h1>
 
-        <!-- TOP CARDS -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="grid grid-cols-4 overflow-hidden rounded-lg border border-gray-400 bg-white text-center shadow-sm">
+                <div class="px-5 py-2">
+                    <p class="text-sm">Total Scan</p>
+                    <h2 class="text-xl font-semibold">{{ logs|length }}</h2>
+                </div>
 
-            <div class="bg-white p-4 rounded-xl shadow">
-                <p class="text-gray-500">Total Scans</p>
-                <h2 class="text-2xl font-bold">{{ logs|length }}</h2>
+                <div class="border-l border-gray-400 px-5 py-2">
+                    <p class="text-sm">Avg Confidence</p>
+                    <h2 class="text-xl font-semibold">90%</h2>
+                </div>
+
+                <div class="border-l border-gray-400 px-5 py-2">
+                    <p class="text-sm">System Status</p>
+                    <h2 class="flex items-center justify-center gap-2 text-lg font-semibold">
+                        <span class="h-3 w-3 rounded-full bg-green-600"></span>
+                        Active
+                    </h2>
+                </div>
+
+                <div class="border-l border-gray-400 px-5 py-2">
+                    <p class="text-sm">Issue Found</p>
+                    <h2 class="text-xl font-semibold">
+                        {% if logs|length > 0 %}1{% else %}0{% endif %}
+                    </h2>
+                </div>
+            </div>
+        </section>
+
+        <!-- DASHBOARD CONTENT -->
+        <section class="mt-4 grid grid-cols-[1.35fr_1fr] gap-4">
+
+            <!-- CHART -->
+            <div class="rounded-lg border border-gray-400 bg-white px-3 py-3">
+                <div class="h-[220px]">
+                    <canvas id="diagnosisChart"></canvas>
+                </div>
+
+                <p class="mt-2 text-sm">Confidence Score: ~90%</p>
             </div>
 
-            <div class="bg-white p-4 rounded-xl shadow">
-                <p class="text-gray-500">Latest Confidence</p>
-                <h2 class="text-2xl font-bold">
+            <!-- LATEST -->
+            <div class="rounded-lg border border-gray-400 bg-white px-4 py-4">
+                <h2 class="mb-1 text-base font-semibold">Latest diagnosis</h2>
+
+                <div>
                     {% if logs|length > 0 %}
-                        {{ logs[-1].confidence }}
+                        <p>{{ logs[-1].result[:80] }}</p>
+                        <p class="mt-2 text-sm text-gray-500">{{ logs[-1].time }}</p>
                     {% else %}
-                        --
+                        <p>No scan yet</p>
                     {% endif %}
-                </h2>
+                </div>
             </div>
 
-            <div class="bg-white p-4 rounded-xl shadow">
-                <p class="text-gray-500">System Status</p>
-                <h2 class="text-2xl font-bold text-green-500">Active</h2>
+        </section>
+
+        <!-- HISTORY -->
+        <section class="mt-4 rounded-lg border border-gray-400 bg-white p-4">
+            <h2 class="mb-4 font-semibold">Scan History</h2>
+
+            <div class="grid grid-cols-3 gap-4">
+
+                {% for log in logs|reverse %}
+
+                <div class="rounded-lg border border-gray-300 p-3 hover:bg-gray-50">
+
+                    <div class="mb-2 text-sm text-gray-500">
+                        {{ log.time }}
+                    </div>
+
+                    <img src="/image/{{ log.image }}"
+                         class="h-28 w-full rounded object-cover cursor-pointer"
+                         onclick="openModal('/image/{{ log.image }}', {{ log.result | tojson }}, '{{ log.time }}')">
+
+                    <p class="mt-2 text-sm text-gray-700">
+                        {{ log.result[:100] }}...
+                    </p>
+
+                </div>
+
+                {% endfor %}
             </div>
+        </section>
 
-        </div>
+    </main>
+</div>
 
-        <!-- LOGS -->
-        <div class="space-y-4">
+<!-- MODAL -->
+<div id="modal" class="fixed inset-0 hidden items-center justify-center bg-black/70 p-6">
+    <div class="relative w-full max-w-3xl rounded-xl bg-white p-6">
+        <button onclick="closeModal()" class="absolute right-3 top-2 text-xl">x</button>
 
-            {% for log in logs|reverse %}
-            <div class="bg-white p-4 rounded-xl shadow">
+        <img id="mimg" class="mb-4 rounded">
 
-                <div class="text-sm text-gray-500">
-                    ⏰ {{ log.time }}
-                </div>
+        <div id="mtime" class="mb-3 text-sm text-gray-500"></div>
 
-                {% if log.image %}
-                <img src="/image/{{ log.image }}"
-                     class="mt-3 rounded-lg max-w-md">
-                {% endif %}
-
-                <div class="mt-2 text-green-600 font-bold">
-                    📊 {{ log.confidence }}
-                </div>
-
-                <div class="mt-2 text-gray-700 whitespace-pre-wrap">
-                    {{ log.result }}
-                </div>
-
-            </div>
-            {% endfor %}
-
-        </div>
-
+        <pre id="mtext" class="whitespace-pre-wrap text-gray-700"></pre>
     </div>
 </div>
+
+<script>
+const chart = document.getElementById('diagnosisChart');
+
+new Chart(chart, {
+    type: 'pie',
+    data: {
+        labels: [
+            'Magnesium deficiency',
+            'Iron deficiency',
+            'Healthy',
+            'Leaf spot disease',
+            'Other'
+        ],
+        datasets: [{
+            data: [20, 30, 15, 2, 33],
+            backgroundColor: [
+                '#b9867e',
+                '#d8bd73',
+                '#83aa91',
+                '#8e8a9d',
+                '#d8d690'
+            ],
+            borderWidth: 1
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false }
+        }
+    }
+});
+
+function openModal(img, text, time) {
+    document.getElementById("modal").classList.remove("hidden");
+    document.getElementById("modal").classList.add("flex");
+
+    document.getElementById("mimg").src = img;
+    document.getElementById("mtext").innerText = text;
+    document.getElementById("mtime").innerText = time;
+}
+
+function closeModal() {
+    document.getElementById("modal").classList.add("hidden");
+    document.getElementById("modal").classList.remove("flex");
+}
+</script>
 
 </body>
 </html>
