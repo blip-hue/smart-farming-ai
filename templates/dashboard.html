@@ -1,188 +1,465 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Farming AI Dashboard</title>
-
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <meta http-equiv="refresh" content="20">
+    <meta http-equiv="refresh" content="30">
 </head>
 
-<body class="bg-[#f7faf8] text-black">
+<body class="bg-gray-100 text-gray-900">
+<div class="min-h-screen">
 
-<div class="flex min-h-screen">
-
-    <!-- SIDEBAR -->
-    <aside class="w-[170px] bg-[#202932] text-white px-2 py-11">
-        <nav class="space-y-3 text-sm">
-            <div class="flex items-center gap-3 rounded-md bg-white/15 px-3 py-3 shadow">
-                <span class="text-xl">▦</span>
-                <span class="font-semibold">Dashboard</span>
-            </div>
-
-            <div class="flex items-center gap-3 rounded-md px-3 py-2 text-white/90 hover:bg-white/10">
-                <span class="text-lg">↺</span>
-                <span>Scan History</span>
-            </div>
-        </nav>
-    </aside>
-
-    <!-- MAIN -->
-    <main class="flex-1 px-4 py-6">
-
-        <!-- HEADER -->
-        <section class="flex items-center justify-between border-b border-gray-300 pb-3">
-            <h1 class="text-2xl font-semibold tracking-tight">
-                Nutrient Deficiency Detection
-            </h1>
-
-            <div class="grid grid-cols-4 overflow-hidden rounded-lg border border-gray-400 bg-white text-center shadow-sm">
-                <div class="px-5 py-2">
-                    <p class="text-sm">Total Scan</p>
-                    <h2 class="text-xl font-semibold">{{ logs|length }}</h2>
-                </div>
-
-                <div class="border-l border-gray-400 px-5 py-2">
-                    <p class="text-sm">Avg Confidence</p>
-                    <h2 class="text-xl font-semibold">90%</h2>
-                </div>
-
-                <div class="border-l border-gray-400 px-5 py-2">
-                    <p class="text-sm">System Status</p>
-                    <h2 class="flex items-center justify-center gap-2 text-lg font-semibold">
-                        <span class="h-3 w-3 rounded-full bg-green-600"></span>
-                        Active
-                    </h2>
-                </div>
-
-                <div class="border-l border-gray-400 px-5 py-2">
-                    <p class="text-sm">Issue Found</p>
-                    <h2 class="text-xl font-semibold">
-                        {% if logs|length > 0 %}1{% else %}0{% endif %}
-                    </h2>
-                </div>
-            </div>
-        </section>
-
-        <!-- DASHBOARD CONTENT -->
-        <section class="mt-4 grid grid-cols-[1.35fr_1fr] gap-4">
-
-            <!-- CHART -->
-            <div class="rounded-lg border border-gray-400 bg-white px-3 py-3">
-                <div class="h-[220px]">
-                    <canvas id="diagnosisChart"></canvas>
-                </div>
-
-                <p class="mt-2 text-sm">Confidence Score: ~90%</p>
-            </div>
-
-            <!-- LATEST -->
-            <div class="rounded-lg border border-gray-400 bg-white px-4 py-4">
-                <h2 class="mb-1 text-base font-semibold">Latest diagnosis</h2>
-
+    <!-- HEADER -->
+    <header class="bg-[#1f2937] px-4 py-4 text-white shadow">
+        <div class="mx-auto max-w-7xl">
+            <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                    {% if logs|length > 0 %}
-                        <p>{{ logs[-1].result[:80] }}</p>
-                        <p class="mt-2 text-sm text-gray-500">{{ logs[-1].time }}</p>
-                    {% else %}
-                        <p>No scan yet</p>
+                    <h1 class="text-2xl font-bold">Smart Farming AI Dashboard</h1>
+                    <p class="text-sm text-gray-300">Chili fruit disease and leaf nutrient monitoring</p>
+                </div>
+                <p class="text-sm text-gray-300">Devices: Chili Cam + Leaf Cam</p>
+            </div>
+
+            <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div class="rounded-lg bg-white/10 p-4">
+                    <p class="text-xs text-gray-300">System Status</p>
+                    <p class="mt-1 flex items-center gap-2 text-lg font-bold">
+                        <span class="h-3 w-3 rounded-full bg-green-400"></span>
+                        Active
+                    </p>
+                </div>
+                <div class="rounded-lg bg-white/10 p-4">
+                    <p class="text-xs text-gray-300">Total Scans</p>
+                    <p class="mt-1 text-lg font-bold">{{ total_scans }}</p>
+                </div>
+                <div class="rounded-lg bg-white/10 p-4">
+                    <p class="text-xs text-gray-300">Chili Issues</p>
+                    <p class="mt-1 text-lg font-bold">{{ chili_issues }}</p>
+                </div>
+                <div class="rounded-lg bg-white/10 p-4">
+                    <p class="text-xs text-gray-300">Leaf Issues</p>
+                    <p class="mt-1 text-lg font-bold">{{ leaf_issues }}</p>
+                </div>
+            </section>
+        </div>
+    </header>
+
+    <main class="mx-auto max-w-7xl px-4 py-5">
+
+        <!-- LATEST RESULTS: CHILI + LEAF SIDE BY SIDE -->
+        <section class="grid gap-5 lg:grid-cols-2">
+
+            <!-- CHILI LATEST -->
+            {% if latest_chili %}
+            {% set cs = latest_chili.status | lower %}
+            <article class="rounded-xl border {% if cs == 'disease' %}border-red-200{% else %}border-green-200{% endif %} bg-white p-5 shadow-sm">
+                <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                        <p class="inline-flex items-center rounded-full px-4 py-2 text-sm font-bold
+                            {% if cs == 'disease' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                            {% if cs == 'disease' %}Critical{% else %}Healthy{% endif %}
+                        </p>
+                        <h2 class="mt-3 text-2xl font-extrabold {% if cs == 'disease' %}text-red-700{% else %}text-green-700{% endif %}">
+                            {% if cs == 'disease' %}Chili Fruit Disease Found{% else %}Chili Fruit Healthy{% endif %}
+                        </h2>
+                        <p class="mt-2 text-base font-semibold text-gray-800">
+                            {{ latest_chili.diagnosis }}
+                        </p>
+                    </div>
+                    <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600">Chili Cam</span>
+                </div>
+
+                {% if latest_chili.image_url %}
+                <img src="{{ latest_chili.image_url }}"
+                     class="h-64 w-full cursor-pointer rounded-lg border border-gray-200 object-cover"
+                     alt="Latest chili scan"
+                     onclick="openModal({{ latest_chili | tojson }})">
+                {% endif %}
+
+                <div class="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-3">
+                    <div class="rounded-lg bg-gray-50 p-3">
+                        <p class="font-semibold text-gray-900">Confidence</p>
+                        <p>{{ latest_chili.confidence }}</p>
+                    </div>
+                    <div class="rounded-lg bg-gray-50 p-3">
+                        <p class="font-semibold text-gray-900">Time</p>
+                        <p>{{ latest_chili.time }}</p>
+                    </div>
+                    <div class="rounded-lg bg-gray-50 p-3">
+                        <p class="font-semibold text-gray-900">Status</p>
+                        <p class="{% if cs == 'disease' %}text-red-700{% else %}text-green-700{% endif %} font-semibold">
+                            {{ latest_chili.status | capitalize }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-4 rounded-lg {% if cs == 'disease' %}bg-red-50{% else %}bg-green-50{% endif %} p-4">
+                    <h3 class="font-bold {% if cs == 'disease' %}text-red-800{% else %}text-green-800{% endif %}">AI Analyzation</h3>
+                    <p class="mt-1 text-sm font-semibold text-gray-800">{{ latest_chili.diagnosis }}</p>
+                    {% if latest_chili.cause %}
+                    <p class="mt-2 text-sm text-gray-700"><span class="font-semibold">Cause:</span> {{ latest_chili.cause }}</p>
+                    {% endif %}
+                    {% if latest_chili.solution %}
+                    <p class="mt-1 text-sm text-gray-700"><span class="font-semibold">Solution:</span> {{ latest_chili.solution }}</p>
                     {% endif %}
                 </div>
-            </div>
+            </article>
+            {% else %}
+            <article class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex items-center justify-center h-64">
+                <p class="text-gray-400">No chili scan yet</p>
+            </article>
+            {% endif %}
+
+            <!-- LEAF LATEST -->
+            {% if latest_leaf %}
+            {% set ls = latest_leaf.status | lower %}
+            <article class="rounded-xl border {% if ls == 'deficiency' %}border-yellow-200{% else %}border-green-200{% endif %} bg-white p-5 shadow-sm">
+                <div class="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                        <p class="inline-flex items-center rounded-full px-4 py-2 text-sm font-bold
+                            {% if ls == 'deficiency' %}bg-yellow-100 text-yellow-700{% else %}bg-green-100 text-green-700{% endif %}">
+                            {% if ls == 'deficiency' %}Warning{% else %}Healthy{% endif %}
+                        </p>
+                        <h2 class="mt-3 text-2xl font-extrabold {% if ls == 'deficiency' %}text-yellow-700{% else %}text-green-700{% endif %}">
+                            {% if ls == 'deficiency' %}Leaf Nutrient Deficiency{% else %}Leaf Healthy{% endif %}
+                        </h2>
+                        <p class="mt-2 text-base font-semibold text-gray-800">
+                            {{ latest_leaf.diagnosis }}
+                        </p>
+                    </div>
+                    <span class="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600">Leaf Cam</span>
+                </div>
+
+                {% if latest_leaf.image_url %}
+                <img src="{{ latest_leaf.image_url }}"
+                     class="h-64 w-full cursor-pointer rounded-lg border border-gray-200 object-cover"
+                     alt="Latest leaf scan"
+                     onclick="openModal({{ latest_leaf | tojson }})">
+                {% endif %}
+
+                <div class="mt-4 grid gap-3 text-sm text-gray-600 sm:grid-cols-3">
+                    <div class="rounded-lg bg-gray-50 p-3">
+                        <p class="font-semibold text-gray-900">Confidence</p>
+                        <p>{{ latest_leaf.confidence }}</p>
+                    </div>
+                    <div class="rounded-lg bg-gray-50 p-3">
+                        <p class="font-semibold text-gray-900">Time</p>
+                        <p>{{ latest_leaf.time }}</p>
+                    </div>
+                    <div class="rounded-lg bg-gray-50 p-3">
+                        <p class="font-semibold text-gray-900">Status</p>
+                        <p class="{% if ls == 'deficiency' %}text-yellow-700{% else %}text-green-700{% endif %} font-semibold">
+                            {{ latest_leaf.status | capitalize }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-4 rounded-lg {% if ls == 'deficiency' %}bg-yellow-50{% else %}bg-green-50{% endif %} p-4">
+                    <h3 class="font-bold {% if ls == 'deficiency' %}text-yellow-800{% else %}text-green-800{% endif %}">AI Analyzation</h3>
+                    <p class="mt-1 text-sm font-semibold text-gray-800">{{ latest_leaf.diagnosis }}</p>
+                    {% if latest_leaf.cause %}
+                    <p class="mt-2 text-sm text-gray-700"><span class="font-semibold">Cause:</span> {{ latest_leaf.cause }}</p>
+                    {% endif %}
+                    {% if latest_leaf.solution %}
+                    <p class="mt-1 text-sm text-gray-700"><span class="font-semibold">Solution:</span> {{ latest_leaf.solution }}</p>
+                    {% endif %}
+                </div>
+            </article>
+            {% else %}
+            <article class="rounded-xl border border-gray-200 bg-white p-5 shadow-sm flex items-center justify-center h-64">
+                <p class="text-gray-400">No leaf scan yet</p>
+            </article>
+            {% endif %}
 
         </section>
 
-        <!-- HISTORY -->
-        <section class="mt-4 rounded-lg border border-gray-400 bg-white p-4">
-            <h2 class="mb-4 font-semibold">Scan History</h2>
+        <!-- STATUS + CHART -->
+        <section class="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+            <article class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <h2 class="mb-4 text-lg font-bold">Status Summary</h2>
+                <div class="space-y-4 text-base font-bold">
+                    <div class="flex items-center gap-3">
+                        <span class="h-4 w-4 rounded-full bg-red-500"></span>
+                        <span class="text-red-700">Chili Disease: {{ chili_disease_count }} scans</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="h-4 w-4 rounded-full bg-yellow-400"></span>
+                        <span class="text-yellow-700">Leaf Deficiency: {{ leaf_deficiency_count }} scans</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="h-4 w-4 rounded-full bg-green-500"></span>
+                        <span class="text-green-700">Healthy: {{ healthy_count }} scans</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="h-4 w-4 rounded-full bg-blue-400"></span>
+                        <span class="text-blue-700">Total: {{ total_scans }} scans</span>
+                    </div>
+                </div>
+            </article>
 
-            <div class="grid grid-cols-3 gap-4">
+            <article class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <h2 class="mb-3 text-lg font-bold">Scan Result Count</h2>
+                <div class="h-56">
+                    <canvas id="scanChart"></canvas>
+                </div>
+            </article>
+        </section>
 
-                {% for log in logs|reverse %}
+        <!-- SCAN HISTORY (ALL) -->
+        <section class="mt-5 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div class="mb-4 flex items-center justify-between">
+                <h2 class="text-lg font-bold">Scan History</h2>
+                <span class="text-sm text-gray-500">{{ total_scans }} total scans — click any card to view AI analysis</span>
+            </div>
 
-                <div class="rounded-lg border border-gray-300 p-3 hover:bg-gray-50">
+            <!-- FILTER BUTTONS -->
+            <div class="mb-4 flex gap-2 flex-wrap">
+                <button onclick="filterHistory('all')"
+                    class="filter-btn active rounded-full border border-gray-300 bg-gray-100 px-4 py-1 text-sm font-semibold"
+                    data-filter="all">All</button>
+                <button onclick="filterHistory('chili_cam')"
+                    class="filter-btn rounded-full border border-red-200 bg-red-50 px-4 py-1 text-sm font-semibold text-red-700"
+                    data-filter="chili_cam">Chili Cam</button>
+                <button onclick="filterHistory('leaf_cam')"
+                    class="filter-btn rounded-full border border-yellow-200 bg-yellow-50 px-4 py-1 text-sm font-semibold text-yellow-700"
+                    data-filter="leaf_cam">Leaf Cam</button>
+                <button onclick="filterHistory('disease')"
+                    class="filter-btn rounded-full border border-red-300 bg-red-100 px-4 py-1 text-sm font-semibold text-red-800"
+                    data-filter="disease">Disease Only</button>
+                <button onclick="filterHistory('deficiency')"
+                    class="filter-btn rounded-full border border-yellow-300 bg-yellow-100 px-4 py-1 text-sm font-semibold text-yellow-800"
+                    data-filter="deficiency">Deficiency Only</button>
+                <button onclick="filterHistory('healthy')"
+                    class="filter-btn rounded-full border border-green-200 bg-green-50 px-4 py-1 text-sm font-semibold text-green-700"
+                    data-filter="healthy">Healthy Only</button>
+            </div>
 
-                    <div class="mb-2 text-sm text-gray-500">
-                        {{ log.time }}
+            {% if logs %}
+            <div id="historyGrid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {% for log in logs %}
+                {% set st = log.status | lower %}
+                <article class="history-card rounded-lg border border-gray-200 p-3 cursor-pointer hover:shadow-md transition-shadow"
+                         data-device="{{ log.device_type }}"
+                         data-status="{{ st }}"
+                         onclick="openModal({{ log | tojson }})">
+
+                    {% if log.image_url %}
+                    <img src="{{ log.image_url }}"
+                         class="h-32 w-full rounded-md object-cover pointer-events-none"
+                         alt="Scan image"
+                         onerror="this.style.display='none'">
+                    {% else %}
+                    <div class="h-32 w-full rounded-md bg-gray-100 flex items-center justify-center text-gray-400 text-xs">No image</div>
+                    {% endif %}
+
+                    <div class="mt-2 flex items-center justify-between">
+                        <p class="text-xs font-bold text-gray-500">{{ log.device_label }}</p>
+                        <span class="rounded-full px-2 py-0.5 text-xs font-bold
+                            {% if st == 'disease' %}bg-red-100 text-red-700
+                            {% elif st == 'deficiency' %}bg-yellow-100 text-yellow-700
+                            {% else %}bg-green-100 text-green-700{% endif %}">
+                            {{ log.status | capitalize }}
+                        </span>
                     </div>
 
-                    <img src="/image/{{ log.image }}"
-                         class="h-28 w-full rounded object-cover cursor-pointer"
-                         onclick="openModal('/image/{{ log.image }}', {{ log.result | tojson }}, '{{ log.time }}')">
-
-                    <p class="mt-2 text-sm text-gray-700">
-                        {{ log.result[:100] }}...
-                    </p>
-
-                </div>
-
+                    <h3 class="mt-1 text-sm font-bold
+                        {% if st == 'disease' %}text-red-700
+                        {% elif st == 'deficiency' %}text-yellow-700
+                        {% else %}text-green-700{% endif %}">
+                        {{ log.diagnosis or 'No diagnosis' }}
+                    </h3>
+                    <p class="mt-1 text-xs text-gray-500">{{ log.time }}</p>
+                </article>
                 {% endfor %}
             </div>
+            {% else %}
+            <p class="text-center text-gray-400 py-8">No scans recorded yet. ESP-CAMs will send data automatically.</p>
+            {% endif %}
         </section>
 
     </main>
 </div>
 
-<!-- MODAL -->
-<div id="modal" class="fixed inset-0 hidden items-center justify-center bg-black/70 p-6">
-    <div class="relative w-full max-w-3xl rounded-xl bg-white p-6">
-        <button onclick="closeModal()" class="absolute right-3 top-2 text-xl">x</button>
+<!-- DETAIL MODAL -->
+<div id="modal" class="fixed inset-0 hidden items-center justify-center bg-black/75 p-4 z-50">
+    <div class="relative w-full max-w-2xl rounded-xl bg-white p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+        <button onclick="closeModal()" class="absolute right-4 top-4 text-2xl font-bold text-gray-500 hover:text-gray-900 leading-none">×</button>
 
-        <img id="mimg" class="mb-4 rounded">
+        <!-- Status Badge + Device -->
+        <div class="flex items-center gap-3 mb-4">
+            <span id="mBadge" class="rounded-full px-4 py-1 text-sm font-bold"></span>
+            <span id="mDevice" class="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-600"></span>
+        </div>
 
-        <div id="mtime" class="mb-3 text-sm text-gray-500"></div>
+        <!-- Title -->
+        <h2 id="mTitle" class="text-2xl font-extrabold mb-1"></h2>
+        <p id="mDiagnosis" class="text-base font-semibold text-gray-700 mb-4"></p>
 
-        <pre id="mtext" class="whitespace-pre-wrap text-gray-700"></pre>
+        <!-- Image -->
+        <img id="mImg" class="w-full rounded-lg object-cover max-h-64 border border-gray-200 mb-4" alt="Scan image">
+
+        <!-- Stats Row -->
+        <div class="grid grid-cols-3 gap-3 mb-4">
+            <div class="rounded-lg bg-gray-50 p-3 text-sm">
+                <p class="font-semibold text-gray-900">Confidence</p>
+                <p id="mConfidence" class="text-gray-700"></p>
+            </div>
+            <div class="rounded-lg bg-gray-50 p-3 text-sm">
+                <p class="font-semibold text-gray-900">Time</p>
+                <p id="mTime" class="text-gray-700"></p>
+            </div>
+            <div class="rounded-lg bg-gray-50 p-3 text-sm">
+                <p class="font-semibold text-gray-900">Status</p>
+                <p id="mStatus" class="font-semibold"></p>
+            </div>
+        </div>
+
+        <!-- AI Analyzation Box -->
+        <div id="mAnalysisBox" class="rounded-lg p-4">
+            <h3 id="mAnalysisTitle" class="font-bold mb-3">AI Analyzation</h3>
+            <div class="space-y-2 text-sm text-gray-700">
+                <p><span class="font-semibold">Diagnosis:</span> <span id="maDiagnosis"></span></p>
+                <p><span class="font-semibold">Cause:</span> <span id="maCause"></span></p>
+                <p><span class="font-semibold">Solution:</span> <span id="maSolution"></span></p>
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
-const chart = document.getElementById('diagnosisChart');
-
-new Chart(chart, {
+// ================= CHART =================
+new Chart(document.getElementById('scanChart'), {
     type: 'pie',
     data: {
-        labels: [
-            'Magnesium deficiency',
-            'Iron deficiency',
-            'Healthy',
-            'Leaf spot disease',
-            'Other'
-        ],
+        labels: ['Healthy', 'Chili Disease', 'Leaf Deficiency'],
         datasets: [{
-            data: [20, 30, 15, 2, 33],
-            backgroundColor: [
-                '#b9867e',
-                '#d8bd73',
-                '#83aa91',
-                '#8e8a9d',
-                '#d8d690'
-            ],
-            borderWidth: 1
+            data: [{{ healthy_count }}, {{ chili_disease_count }}, {{ leaf_deficiency_count }}],
+            backgroundColor: ['#22c55e', '#ef4444', '#facc15'],
+            borderColor: '#ffffff',
+            borderWidth: 2
         }]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-            legend: { display: false }
-        }
+        plugins: { legend: { position: 'bottom' } }
     }
 });
 
-function openModal(img, text, time) {
-    document.getElementById("modal").classList.remove("hidden");
-    document.getElementById("modal").classList.add("flex");
+// ================= MODAL =================
+function openModal(log) {
+    const status = (log.status || '').toLowerCase();
+    const isDisease = status === 'disease';
+    const isDeficiency = status === 'deficiency';
+    const isHealthy = status === 'healthy';
 
-    document.getElementById("mimg").src = img;
-    document.getElementById("mtext").innerText = text;
-    document.getElementById("mtime").innerText = time;
+    // Badge
+    const badge = document.getElementById('mBadge');
+    if (isDisease) {
+        badge.className = 'rounded-full px-4 py-1 text-sm font-bold bg-red-100 text-red-700';
+        badge.textContent = 'Critical';
+    } else if (isDeficiency) {
+        badge.className = 'rounded-full px-4 py-1 text-sm font-bold bg-yellow-100 text-yellow-700';
+        badge.textContent = 'Warning';
+    } else {
+        badge.className = 'rounded-full px-4 py-1 text-sm font-bold bg-green-100 text-green-700';
+        badge.textContent = 'Healthy';
+    }
+
+    // Device label
+    document.getElementById('mDevice').textContent = log.device_label || log.device_type || '';
+
+    // Title
+    const titleEl = document.getElementById('mTitle');
+    if (log.device_type === 'chili_cam') {
+        titleEl.textContent = isDisease ? 'Chili Fruit Disease Found' : 'Chili Fruit Healthy';
+        titleEl.className = 'text-2xl font-extrabold mb-1 ' + (isDisease ? 'text-red-700' : 'text-green-700');
+    } else {
+        titleEl.textContent = isDeficiency ? 'Leaf Nutrient Deficiency' : 'Leaf Healthy';
+        titleEl.className = 'text-2xl font-extrabold mb-1 ' + (isDeficiency ? 'text-yellow-700' : 'text-green-700');
+    }
+
+    // Diagnosis subtitle
+    document.getElementById('mDiagnosis').textContent = log.diagnosis || '';
+
+    // Image
+    const img = document.getElementById('mImg');
+    if (log.image_url) {
+        img.src = log.image_url;
+        img.style.display = 'block';
+    } else {
+        img.style.display = 'none';
+    }
+
+    // Stats
+    document.getElementById('mConfidence').textContent = log.confidence || '--';
+    document.getElementById('mTime').textContent = log.time || '--';
+
+    const statusEl = document.getElementById('mStatus');
+    statusEl.textContent = (log.status || '--').charAt(0).toUpperCase() + (log.status || '').slice(1);
+    statusEl.className = isDisease ? 'font-semibold text-red-700' : isDeficiency ? 'font-semibold text-yellow-700' : 'font-semibold text-green-700';
+
+    // AI Box
+    const box = document.getElementById('mAnalysisBox');
+    const boxTitle = document.getElementById('mAnalysisTitle');
+    if (isDisease) {
+        box.className = 'rounded-lg p-4 bg-red-50';
+        boxTitle.className = 'font-bold mb-3 text-red-800';
+    } else if (isDeficiency) {
+        box.className = 'rounded-lg p-4 bg-yellow-50';
+        boxTitle.className = 'font-bold mb-3 text-yellow-800';
+    } else {
+        box.className = 'rounded-lg p-4 bg-green-50';
+        boxTitle.className = 'font-bold mb-3 text-green-800';
+    }
+
+    document.getElementById('maDiagnosis').textContent = log.diagnosis || '--';
+    document.getElementById('maCause').textContent = log.cause || 'N/A';
+    document.getElementById('maSolution').textContent = log.solution || 'N/A';
+
+    // Show modal
+    const modal = document.getElementById('modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
 }
 
 function closeModal() {
-    document.getElementById("modal").classList.add("hidden");
-    document.getElementById("modal").classList.remove("flex");
+    const modal = document.getElementById('modal');
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+}
+
+// Close on backdrop click
+document.getElementById('modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+// ================= FILTER =================
+function filterHistory(type) {
+    const cards = document.querySelectorAll('.history-card');
+    cards.forEach(card => {
+        const device = card.dataset.device;
+        const status = card.dataset.status;
+        let show = false;
+
+        if (type === 'all') show = true;
+        else if (type === 'chili_cam') show = device === 'chili_cam';
+        else if (type === 'leaf_cam') show = device === 'leaf_cam';
+        else if (type === 'disease') show = status === 'disease';
+        else if (type === 'deficiency') show = status === 'deficiency';
+        else if (type === 'healthy') show = status === 'healthy';
+
+        card.style.display = show ? 'block' : 'none';
+    });
+
+    // Update active button
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.toggle('ring-2', btn.dataset.filter === type);
+        btn.classList.toggle('ring-gray-400', btn.dataset.filter === type);
+    });
 }
 </script>
 
