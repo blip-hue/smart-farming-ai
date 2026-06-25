@@ -153,7 +153,7 @@ def dashboard():
             response = (
                 supabase.table("scans")
                 .select("*")
-                .order("Time", desc=True)
+                .order("id", desc=True)
                 .limit(100)
                 .execute()
             )
