@@ -13,39 +13,71 @@
 <div class="min-h-screen">
 
     <!-- HEADER -->
-    <header class="bg-[#1f2937] px-4 py-4 text-white shadow">
-        <div class="mx-auto max-w-7xl">
-            <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                    <h1 class="text-2xl font-bold">AI PLANT HEALTH DIAGNOSIS</h1>
-                    <p class="text-sm text-gray-300">Chili fruit disease and leaf nutrient monitoring</p>
-                </div>
-                <p class="text-sm text-gray-300">Devices: Chili Cam + Leaf Cam</p>
+<header class="relative overflow-hidden bg-gradient-to-r from-green-800 via-emerald-700 to-green-900 px-4 py-6 text-white shadow-lg">
+
+    <!-- decorative blur circles -->
+    <div class="absolute -top-10 -left-10 h-40 w-40 rounded-full bg-green-500/20 blur-3xl"></div>
+    <div class="absolute -bottom-10 -right-10 h-40 w-40 rounded-full bg-lime-400/20 blur-3xl"></div>
+
+    <!-- optional leaf pattern overlay -->
+    <div class="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/leaf.png')]"></div>
+
+    <div class="relative mx-auto max-w-7xl">
+
+        <!-- TOP TITLE AREA -->
+        <div class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+
+            <div>
+                <h1 class="text-3xl font-extrabold tracking-wide flex items-center gap-2">
+                    🌿 AI Plant Health Diagnosis
+                </h1>
+
+                <p class="text-sm text-green-100/90 mt-1">
+                    Smart chili crop monitoring • Leaf nutrient analysis • IoT farm intelligence
+                </p>
             </div>
 
-            <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <div class="rounded-lg bg-white/10 p-4">
-                    <p class="text-xs text-gray-300">System Status</p>
-                    <p class="mt-1 flex items-center gap-2 text-lg font-bold">
-                        <span class="h-3 w-3 rounded-full bg-green-400"></span>
-                        Active
-                    </p>
-                </div>
-                <div class="rounded-lg bg-white/10 p-4">
-                    <p class="text-xs text-gray-300">Total Scans</p>
-                    <p class="mt-1 text-lg font-bold">{{ total_scans }}</p>
-                </div>
-                <div class="rounded-lg bg-white/10 p-4">
-                    <p class="text-xs text-gray-300">Chili Issues</p>
-                    <p class="mt-1 text-lg font-bold">{{ chili_issues }}</p>
-                </div>
-                <div class="rounded-lg bg-white/10 p-4">
-                    <p class="text-xs text-gray-300">Leaf Issues</p>
-                    <p class="mt-1 text-lg font-bold">{{ leaf_issues }}</p>
-                </div>
-            </section>
+            <div class="flex items-center gap-2 text-sm text-green-100">
+                <span class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 backdrop-blur">
+                    📡 Devices Active
+                </span>
+                <span class="rounded-full bg-white/10 px-3 py-1 backdrop-blur">
+                    Chili Cam + Leaf Cam
+                </span>
+            </div>
+
         </div>
-    </header>
+
+        <!-- STATS CARDS -->
+        <section class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+
+            <div class="rounded-xl bg-white/10 p-4 backdrop-blur border border-white/10">
+                <p class="text-xs text-green-100">System Status</p>
+                <p class="mt-1 flex items-center gap-2 text-lg font-bold">
+                    <span class="h-3 w-3 rounded-full bg-green-400 animate-pulse"></span>
+                    Active
+                </p>
+            </div>
+
+            <div class="rounded-xl bg-white/10 p-4 backdrop-blur border border-white/10">
+                <p class="text-xs text-green-100">Total Scans</p>
+                <p class="mt-1 text-lg font-bold">{{ total_scans }}</p>
+            </div>
+
+            <div class="rounded-xl bg-white/10 p-4 backdrop-blur border border-white/10">
+                <p class="text-xs text-green-100">Chili Issues</p>
+                <p class="mt-1 text-lg font-bold">{{ chili_issues }}</p>
+            </div>
+
+            <div class="rounded-xl bg-white/10 p-4 backdrop-blur border border-white/10">
+                <p class="text-xs text-green-100">Leaf Issues</p>
+                <p class="mt-1 text-lg font-bold">{{ leaf_issues }}</p>
+            </div>
+
+        </section>
+
+    </div>
+</header>
 
     <main class="mx-auto max-w-7xl px-4 py-5">
 
