@@ -85,11 +85,13 @@ def get_prompt():
     return """
 You are an agricultural vision expert.
 
+CRITICAL RULE: You must first determine if a plant is present. Do NOT classify an image as "healthy" if there is no plant.
+
 STEP 1:
 Check if a real plant/leaf/fruit/crop is visible.
 
 If NO plant is detected:
-Return ONLY this JSON structure:
+Return ONLY this JSON structure (Do NOT use "healthy" for status):
 {
   "status": "no_plant",
   "diagnosis": "No plant detected",
@@ -99,8 +101,8 @@ Return ONLY this JSON structure:
 }
 
 STEP 2:
-If plant IS visible:
-Analyze health and return ONLY JSON structure:
+If a plant IS clearly visible:
+Analyze health and return ONLY this JSON structure:
 {
   "status": "healthy", or "disease", or "deficiency",
   "diagnosis": "short name",
@@ -154,7 +156,11 @@ def prepare_log(log):
 
     prepared = dict(log)
     prepared["result_data"] = result_data
-    prepared["status"] = result_data.get("status", "unknown").lower()
+    
+    # Standardize string checking to prevent fallback issues
+    status_val = str(result_data.get("status", "unknown")).lower().strip()
+    prepared["status"] = status_val
+    
     prepared["diagnosis"] = result_data.get("diagnosis", "")
     prepared["cause"] = result_data.get("cause", "")
     prepared["solution"] = result_data.get("solution", "")
@@ -206,6 +212,7 @@ def dashboard():
     chili_issues = sum(1 for l in logs if l.get("device_type") == "chili_cam" and l.get("status") in ["disease", "deficiency"])
     leaf_issues = sum(1 for l in logs if l.get("device_type") == "leaf_cam" and l.get("status") in ["disease", "deficiency"])
     
+    # Explicitly filter out 'no_plant' statuses from the healthy counter
     healthy_count = sum(1 for l in logs if l.get("status") == "healthy")
 
     return render_template(
@@ -279,7 +286,7 @@ def analyze():
                             ]
                         }
                     ],
-                    temperature=0.2
+                    temperature=0.1 # Slightly lowered to ensure predictable rules compliance
                 )
 
                 raw = response.choices[0].message.content
