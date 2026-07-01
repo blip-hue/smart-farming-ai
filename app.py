@@ -80,7 +80,7 @@ def upload_image_to_supabase(image_bytes, filename):
         return None
 
 
-# ================= PROMPT (FIXED) =================
+# ================= PROMPT =================
 def get_prompt():
     return """
 You are an agricultural vision expert.
@@ -89,7 +89,7 @@ STEP 1:
 Check if a real plant/leaf/fruit/crop is visible.
 
 If NO plant is detected:
-Return ONLY this JSON:
+Return ONLY this JSON structure:
 {
   "status": "no_plant",
   "diagnosis": "No plant detected",
@@ -100,9 +100,9 @@ Return ONLY this JSON:
 
 STEP 2:
 If plant IS visible:
-Analyze health and return ONLY JSON:
+Analyze health and return ONLY JSON structure:
 {
-  "status": "healthy or disease or deficiency",
+  "status": "healthy", or "disease", or "deficiency",
   "diagnosis": "short name",
   "cause": "short cause",
   "solution": "short solution",
@@ -111,7 +111,7 @@ Analyze health and return ONLY JSON:
 """
 
 
-# ================= DASHBOARD HELPERS (UNCHANGED) =================
+# ================= DASHBOARD HELPERS =================
 
 def fetch_all_scans():
     all_logs = []
@@ -156,7 +156,7 @@ def prepare_log(log):
 
     prepared = dict(log)
     prepared["result_data"] = result_data
-    prepared["status"] = result_data.get("status", "unknown")
+    prepared["status"] = result_data.get("status", "unknown").lower()
     prepared["diagnosis"] = result_data.get("diagnosis", "")
     prepared["cause"] = result_data.get("cause", "")
     prepared["solution"] = result_data.get("solution", "")
