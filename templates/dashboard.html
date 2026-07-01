@@ -145,7 +145,7 @@
                 <img src="{{ latest_chili.image_url }}"
                      class="h-56 w-full rounded-xl border border-gray-100 object-cover cursor-pointer mb-4"
                      alt="Latest chili scan"
-                     onclick="openModal({{ latest_chili | tojson }})">
+                     onclick='openModal({{ latest_chili | tojson }})'>
                 {% endif %}
 
                 <div class="grid grid-cols-3 gap-2 mb-4">
@@ -208,7 +208,7 @@
                 <img src="{{ latest_leaf.image_url }}"
                      class="h-56 w-full rounded-xl border border-gray-100 object-cover cursor-pointer mb-4"
                      alt="Latest leaf scan"
-                     onclick="openModal({{ latest_leaf | tojson }})">
+                     onclick='openModal({{ latest_leaf | tojson }})'>
                 {% endif %}
 
                 <div class="grid grid-cols-3 gap-2 mb-4">
@@ -348,7 +348,7 @@
             <div class="scan-card rounded-2xl border border-gray-100 overflow-hidden bg-white shadow-sm"
                  data-device="{{ log.device_type }}"
                  data-status="{{ st }}"
-                 onclick="openModal({{ log | tojson }})">
+                 onclick='openModal({{ log | tojson }})'>
 
                 <!-- Image -->
                 <div class="relative h-36 bg-gray-100">
