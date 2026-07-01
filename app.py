@@ -271,7 +271,7 @@ def analyze():
                 base64_image = base64.b64encode(img_bytes).decode('utf-8')
                 
                 response = client.chat.completions.create(
-                    model="llama-3.2-11b-vision-preview",
+                    model="llama-3.2-11b-vision-instant",
                     messages=[
                         {
                             "role": "user",
