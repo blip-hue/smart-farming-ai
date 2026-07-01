@@ -3,6 +3,7 @@ import os
 import re
 import json
 import base64
+import uuid
 import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -175,9 +176,8 @@ def dashboard():
 
     chili_issues = sum(1 for l in chili_logs if is_problem(l))
     leaf_issues = sum(1 for l in leaf_logs if is_problem(l))
-    healthy_count = sum(1 for l in logs if (l.get("status") or "").lower() == "healthy"
+    healthy_count = sum(1 for l in logs if (l.get("status") or "").lower() == "healthy")
 
-    )
     return render_template(
         "dashboard.html",
         logs=logs,
@@ -212,8 +212,9 @@ def analyze():
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
+        # ✅ FIXED: unique filename (prevents missing images)
         prefix = "chili" if device_type == "chili_cam" else "leaf"
-        filename = f"{prefix}_{datetime.now(MY_TZ).strftime('%Y%m%d_%H%M%S')}.jpg"
+        filename = f"{prefix}_{datetime.now(MY_TZ).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.jpg"
 
         img_buffer = io.BytesIO()
         image.save(img_buffer, format="JPEG", quality=85)
@@ -231,7 +232,7 @@ def analyze():
         prompt = """Analyze this plant image. Return ONLY JSON:
 {"status":"healthy or disease or deficiency","diagnosis":"short","cause":"short","solution":"short","confidence":"%"}"""
 
-        # ================= GROQ VISION FIX =================
+        # ================= GROQ VISION =================
         result_json = None
 
         if client:
