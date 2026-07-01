@@ -2,14 +2,22 @@ import io
 import os
 import re
 import json
+import traceback
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from flask import Flask, request, jsonify, render_template, redirect
 from google import genai
+from google.genai.errors import APIError  # Added for precise quota exception handling
 from PIL import Image
 from supabase import create_client
 
 app = Flask(__name__)
+
+# ================= TIMEZONE =================
+# Render's servers run in UTC by default. Pin to Malaysia time explicitly
+# so timestamps match your local clock instead of drifting ~8 hours.
+MY_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 
 # ================= ENV =================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -27,6 +35,10 @@ if not supabase:
     print("WARNING: Supabase credentials missing (DB disabled)")
 
 # ================= LOCAL FALLBACK =================
+# NOTE: This directory lives on Render's ephemeral disk. Anything saved here
+# is WIPED whenever the service restarts or spins down from idling. It only
+# exists as a last-resort fallback — the real fix is making the Supabase
+# Storage upload below succeed every time.
 IMAGE_FOLDER = "data/images"
 os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
@@ -63,8 +75,16 @@ def extract_json(text):
 
 
 def upload_image_to_supabase(image_bytes, filename):
-    """Upload image to Supabase Storage. Returns public URL or None."""
+    """Upload image to Supabase Storage. Returns public URL or None.
+
+    If this keeps returning None, check the Render logs for the
+    'Supabase Storage upload failed' line printed below — that will show
+    the real exception (bad bucket name, missing permissions, wrong key,
+    bucket not public, etc). Every image currently on the dashboard is
+    coming from the local fallback, which means this call is failing.
+    """
     if not supabase:
+        print("Supabase Storage upload skipped: supabase client not configured")
         return None
     try:
         supabase.storage.from_(SUPABASE_BUCKET).upload(
@@ -76,8 +96,37 @@ def upload_image_to_supabase(image_bytes, filename):
         print(f"Supabase Storage URL: {public_url}")
         return public_url
     except Exception as e:
+        # Full traceback so the real cause shows up in Render logs instead
+        # of just the exception's string repr.
         print(f"Supabase Storage upload failed: {e}")
+        traceback.print_exc()
         return None
+
+
+def fetch_all_scans():
+    """Fetch every row from the 'scans' table, paginating past whatever
+    row cap Supabase's PostgREST layer enforces (Project Settings -> API
+    -> Max Rows, commonly 1000, sometimes lower). Without this, a single
+    .select("*") silently truncates at that server-side limit no matter
+    what your Python code says.
+    """
+    all_logs = []
+    page_size = 1000
+    start = 0
+    while True:
+        response = (
+            supabase.table("scans")
+            .select("*")
+            .order("id", desc=True)
+            .range(start, start + page_size - 1)
+            .execute()
+        )
+        batch = response.data or []
+        all_logs.extend(batch)
+        if len(batch) < page_size:
+            break
+        start += page_size
+    return all_logs
 
 
 def parse_result(result):
@@ -118,6 +167,7 @@ def prepare_log(log):
     prepared["device_type"] = device_type
     prepared["device_label"] = "Chili Cam" if device_type == "chili_cam" else "Leaf Cam"
 
+    # Prioritize cloud URL from DB first, fall back to local route if empty
     image_url = log.get("image_url")
     if not image_url and log.get("image"):
         image_url = f"/image/{log['image']}"
@@ -150,16 +200,10 @@ def dashboard():
     logs = []
     if supabase:
         try:
-            response = (
-                supabase.table("scans")
-                .select("*")
-                .order("id", desc=True)
-                .limit(100)
-                .execute()
-            )
-            logs = response.data or []
+            logs = fetch_all_scans()
         except Exception as e:
             print("Supabase fetch error:", e)
+            traceback.print_exc()
 
     logs = [prepare_log(log) for log in logs]
 
@@ -213,7 +257,7 @@ def analyze():
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         prefix = "chili" if device_type == "chili_cam" else "leaf"
-        filename = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+        filename = f"{prefix}_{datetime.now(MY_TZ).strftime('%Y%m%d_%H%M%S')}.jpg"
 
         # Convert to JPEG bytes
         img_buffer = io.BytesIO()
@@ -223,13 +267,15 @@ def analyze():
         # Upload to Supabase Storage
         image_url = upload_image_to_supabase(img_bytes, filename)
 
-        # Fallback: save locally
+        # Fallback: save locally if Supabase upload yields None
+        # (This is lost on every Render restart — see upload_image_to_supabase
+        # docstring above if you keep landing here.)
         if not image_url:
             local_path = os.path.join(IMAGE_FOLDER, filename)
             with open(local_path, "wb") as f:
                 f.write(img_bytes)
             image_url = f"/image/{filename}"
-            print(f"Saved locally: {filename}")
+            print(f"Saved locally (fallback): {filename}")
 
         # ================= PROMPTS =================
         if device_type == "chili_cam":
@@ -258,8 +304,28 @@ def analyze():
 
                 print(f"Parsed result: {result_json}")
 
+            except APIError as ae:
+                # Catch Gemini free-tier quota exceptions specifically
+                if "429" in str(ae) or "RESOURCE_EXHAUSTED" in str(ae):
+                    print("Gemini Error: Quota exceeded (Free tier limit reached)")
+                    result_json = {
+                        "status": "warning",
+                        "diagnosis": "AI Quota Exceeded",
+                        "cause": "Free-tier limit of 20 requests/day reached.",
+                        "solution": "Wait for quota reset or upgrade Gemini key.",
+                        "confidence": "--"
+                    }
+                else:
+                    print("Gemini API Error:", ae)
+                    result_json = {
+                        "status": "error",
+                        "diagnosis": "AI analysis failed",
+                        "cause": str(ae),
+                        "solution": "Retry the scan",
+                        "confidence": "--"
+                    }
             except Exception as e:
-                print("Gemini Error:", e)
+                print("Gemini Generic Error:", e)
                 result_json = {
                     "status": "error",
                     "diagnosis": "AI analysis failed",
@@ -276,7 +342,7 @@ def analyze():
                 "confidence": "--"
             }
 
-        time_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        time_now = datetime.now(MY_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
         # ================= DB INSERT =================
         entry = {
@@ -295,6 +361,7 @@ def analyze():
                 print(f"Saved to Supabase DB [{device_type}]: {filename}")
             except Exception as e:
                 print("Supabase Insert Error:", e)
+                traceback.print_exc()
 
         return jsonify({
             "status": "success",
@@ -308,6 +375,7 @@ def analyze():
 
     except Exception as e:
         print("SERVER ERROR:", str(e))
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
