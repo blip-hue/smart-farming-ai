@@ -80,6 +80,39 @@ def upload_image_to_supabase(image_bytes, filename):
         return None
 
 
+# ================= PROMPT (FIXED) =================
+def get_prompt():
+    return """
+You are an agricultural vision expert.
+
+STEP 1:
+Check if a real plant/leaf/fruit/crop is visible.
+
+If NO plant is detected:
+Return ONLY this JSON:
+{
+  "status": "no_plant",
+  "diagnosis": "No plant detected",
+  "cause": "Image does not contain a plant or crop",
+  "solution": "Capture a clear image of a leaf or plant",
+  "confidence": "0%"
+}
+
+STEP 2:
+If plant IS visible:
+Analyze health and return ONLY JSON:
+{
+  "status": "healthy or disease or deficiency",
+  "diagnosis": "short name",
+  "cause": "short cause",
+  "solution": "short solution",
+  "confidence": "90%"
+}
+"""
+
+
+# ================= DASHBOARD HELPERS (UNCHANGED) =================
+
 def fetch_all_scans():
     all_logs = []
     page_size = 1000
@@ -149,13 +182,13 @@ def is_problem(log):
     return status in ["disease", "deficiency", "warning", "critical", "problem"]
 
 
-# ================= HOME =================
+# ================= ROUTES =================
+
 @app.route("/", methods=["GET"])
 def home():
     return redirect("/dashboard")
 
 
-# ================= DASHBOARD =================
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
     logs = []
@@ -190,14 +223,12 @@ def dashboard():
     )
 
 
-# ================= IMAGE =================
 @app.route("/image/<filename>")
 def get_image(filename):
     from flask import send_from_directory
     return send_from_directory(IMAGE_FOLDER, filename)
 
 
-# ================= ANALYZE =================
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
@@ -212,7 +243,6 @@ def analyze():
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # ✅ FIXED: unique filename (prevents missing images)
         prefix = "chili" if device_type == "chili_cam" else "leaf"
         filename = f"{prefix}_{datetime.now(MY_TZ).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.jpg"
 
@@ -228,11 +258,6 @@ def analyze():
                 f.write(img_bytes)
             image_url = f"/image/{filename}"
 
-        # ================= PROMPT =================
-        prompt = """Analyze this plant image. Return ONLY JSON:
-{"status":"healthy or disease or deficiency","diagnosis":"short","cause":"short","solution":"short","confidence":"%"}"""
-
-        # ================= GROQ VISION =================
         result_json = None
 
         if client:
@@ -245,7 +270,7 @@ def analyze():
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": prompt},
+                                {"type": "text", "text": get_prompt()},
                                 {
                                     "type": "image_url",
                                     "image_url": {
@@ -259,8 +284,6 @@ def analyze():
                 )
 
                 raw = response.choices[0].message.content
-                print("Groq raw:", raw)
-
                 result_json = extract_json(raw)
 
                 if not result_json:
@@ -286,7 +309,6 @@ def analyze():
                 "confidence": "--"
             }
 
-        # ================= SAVE =================
         entry = {
             "Time": datetime.now(MY_TZ).strftime("%Y-%m-%d %H:%M:%S"),
             "Result": json.dumps(result_json),
@@ -308,6 +330,5 @@ def analyze():
         return f"error: {str(e)}", 500
 
 
-# ================= RUN =================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
