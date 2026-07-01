@@ -2,13 +2,13 @@ import io
 import os
 import re
 import json
-import base64  # Added for Groq image encoding
+import base64
 import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from flask import Flask, request, jsonify, render_template, redirect
-from groq import Groq  # Replaced google.genai with groq
+from groq import Groq
 from PIL import Image
 from supabase import create_client
 
@@ -40,24 +40,19 @@ os.makedirs(IMAGE_FOLDER, exist_ok=True)
 # ================= HELPERS =================
 
 def extract_json(text):
-    """Robustly extract JSON from AI response, even if wrapped in markdown fences."""
     if not text:
         return None
 
     text = text.strip()
-
-    # Remove ```json ... ``` or ``` ... ``` fences
     text = re.sub(r"```json\s*", "", text)
     text = re.sub(r"```\s*", "", text)
     text = text.strip()
 
-    # Try direct parse first
     try:
         return json.loads(text)
     except Exception:
         pass
 
-    # Try to find JSON object using regex
     match = re.search(r'\{.*?\}', text, re.DOTALL)
     if match:
         try:
@@ -69,9 +64,7 @@ def extract_json(text):
 
 
 def upload_image_to_supabase(image_bytes, filename):
-    """Upload image to Supabase Storage. Returns public URL or None."""
     if not supabase:
-        print("Supabase Storage upload skipped: supabase client not configured")
         return None
     try:
         supabase.storage.from_(SUPABASE_BUCKET).upload(
@@ -79,17 +72,14 @@ def upload_image_to_supabase(image_bytes, filename):
             file=image_bytes,
             file_options={"content-type": "image/jpeg", "upsert": "true"}
         )
-        public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(filename)
-        print(f"Supabase Storage URL: {public_url}")
-        return public_url
+        return supabase.storage.from_(SUPABASE_BUCKET).get_public_url(filename)
     except Exception as e:
-        print(f"Supabase Storage upload failed: {e}")
+        print("Supabase upload failed:", e)
         traceback.print_exc()
         return None
 
 
 def fetch_all_scans():
-    """Fetch every row from the 'scans' table using pagination."""
     all_logs = []
     page_size = 1000
     start = 0
@@ -112,8 +102,6 @@ def fetch_all_scans():
 def parse_result(result):
     if isinstance(result, dict):
         return result
-    if not result:
-        return {}
     parsed = extract_json(result)
     if parsed:
         return parsed
@@ -138,14 +126,7 @@ def prepare_log(log):
     prepared["diagnosis"] = result_data.get("diagnosis", "")
     prepared["cause"] = result_data.get("cause", "")
     prepared["solution"] = result_data.get("solution", "")
-    prepared["confidence"] = (
-        log.get("Confidence") or
-        log.get("confidence") or
-        result_data.get("confidence", "--")
-    )
-    prepared["time"] = log.get("Time") or log.get("time") or "--"
-    prepared["device_type"] = device_type
-    prepared["device_label"] = "Chili Cam" if device_type == "chili_cam" else "Leaf Cam"
+    prepared["confidence"] = result_data.get("confidence", "--")
 
     image_url = log.get("image_url")
     if not image_url and log.get("image"):
@@ -194,10 +175,9 @@ def dashboard():
 
     chili_issues = sum(1 for l in chili_logs if is_problem(l))
     leaf_issues = sum(1 for l in leaf_logs if is_problem(l))
-    healthy_count = sum(1 for l in logs if (l.get("status") or "").lower() == "healthy")
-    chili_disease_count = sum(1 for l in chili_logs if is_problem(l))
-    leaf_deficiency_count = sum(1 for l in leaf_logs if is_problem(l))
+    healthy_count = sum(1 for l in logs if (l.get("status") or "").lower() == "healthy"
 
+    )
     return render_template(
         "dashboard.html",
         logs=logs,
@@ -207,12 +187,10 @@ def dashboard():
         chili_issues=chili_issues,
         leaf_issues=leaf_issues,
         healthy_count=healthy_count,
-        chili_disease_count=chili_disease_count,
-        leaf_deficiency_count=leaf_deficiency_count,
     )
 
 
-# ================= IMAGE (local fallback) =================
+# ================= IMAGE =================
 @app.route("/image/<filename>")
 def get_image(filename):
     from flask import send_from_directory
@@ -227,26 +205,20 @@ def analyze():
         if not image_bytes:
             return "error: No image data", 400
 
-        # Normalizing device type identifiers coming from nodes
         raw_device_type = request.headers.get("X-Device-Type", "leaf_cam")
         device_id = request.headers.get("X-Device-ID", "unknown")
 
-        if "chili" in raw_device_type.lower():
-            device_type = "chili_cam"
-        else:
-            device_type = "leaf_cam"
+        device_type = "chili_cam" if "chili" in raw_device_type.lower() else "leaf_cam"
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         prefix = "chili" if device_type == "chili_cam" else "leaf"
         filename = f"{prefix}_{datetime.now(MY_TZ).strftime('%Y%m%d_%H%M%S')}.jpg"
 
-        # Convert to JPEG bytes
         img_buffer = io.BytesIO()
         image.save(img_buffer, format="JPEG", quality=85)
         img_bytes = img_buffer.getvalue()
 
-        # Upload to Supabase Storage
         image_url = upload_image_to_supabase(img_bytes, filename)
 
         if not image_url:
@@ -254,24 +226,20 @@ def analyze():
             with open(local_path, "wb") as f:
                 f.write(img_bytes)
             image_url = f"/image/{filename}"
-            print(f"Saved locally (fallback): {filename}")
 
-        # ================= PROMPTS =================
-        if device_type == "chili_cam":
-            prompt = """Analyze this chili fruit image. Return ONLY a raw JSON object with no markdown, no code fences, no extra text. Just the JSON:
-{"status": "healthy or disease", "diagnosis": "short name", "cause": "short cause", "solution": "short solution", "confidence": "92%"}"""
-        else:
-            prompt = """Analyze this plant leaf image. Return ONLY a raw JSON object with no markdown, no code fences, no extra text. Just the JSON:
-{"status": "healthy or deficiency", "diagnosis": "short name", "cause": "short cause", "solution": "short solution", "confidence": "90%"}"""
+        # ================= PROMPT =================
+        prompt = """Analyze this plant image. Return ONLY JSON:
+{"status":"healthy or disease or deficiency","diagnosis":"short","cause":"short","solution":"short","confidence":"%"}"""
 
-        # ================= AI (GROQ VISION) =================
+        # ================= GROQ VISION FIX =================
         result_json = None
+
         if client:
             try:
-                base64_image = base64.b64encode(img_bytes).decode('utf-8')
-                
+                base64_image = base64.b64encode(img_bytes).decode("utf-8")
+
                 response = client.chat.completions.create(
-                    model="llama-3.2-11b-vision-instant",
+                    model="meta-llama/llama-4-scout-17b-16e-instruct",
                     messages=[
                         {
                             "role": "user",
@@ -288,41 +256,38 @@ def analyze():
                     ],
                     temperature=0.2
                 )
-                
+
                 raw = response.choices[0].message.content
-                print(f"Groq raw response: {raw}")
+                print("Groq raw:", raw)
 
                 result_json = extract_json(raw)
 
                 if not result_json:
-                    raise ValueError(f"Could not parse JSON from Groq output: {raw}")
-
-                print(f"Parsed result: {result_json}")
+                    raise ValueError("Invalid JSON from AI")
 
             except Exception as e:
-                print("Groq API Error:", e)
+                print("Groq error:", e)
                 traceback.print_exc()
                 result_json = {
                     "status": "error",
-                    "diagnosis": "AI analysis failed",
+                    "diagnosis": "AI failed",
                     "cause": str(e),
-                    "solution": "Check API logs or retry the scan",
+                    "solution": "Check API or model",
                     "confidence": "--"
                 }
+
         else:
             result_json = {
                 "status": "debug",
-                "diagnosis": "No Groq key configured",
+                "diagnosis": "No API key",
                 "cause": "",
                 "solution": "",
                 "confidence": "--"
             }
 
-        time_now = datetime.now(MY_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-        # ================= DB INSERT =================
+        # ================= SAVE =================
         entry = {
-            "Time": time_now,
+            "Time": datetime.now(MY_TZ).strftime("%Y-%m-%d %H:%M:%S"),
             "Result": json.dumps(result_json),
             "Confidence": result_json.get("confidence", "--"),
             "image": filename,
@@ -332,25 +297,16 @@ def analyze():
         }
 
         if supabase:
-            try:
-                supabase.table("scans").insert(entry).execute()
-                print(f"Saved to Supabase DB [{device_type}]: {filename}")
-            except Exception as e:
-                print("Supabase Insert Error:", e)
-                traceback.print_exc()
+            supabase.table("scans").insert(entry).execute()
 
-        # CRITICAL HARDWARE COMPATIBILITY FIX: 
-        # Convert the generated result to a direct raw string block.
-        # This allows the microcontrollers to successfully scan keywords like 'healthy' or 'disease'.
         return json.dumps(result_json), 200
 
     except Exception as e:
-        print("SERVER ERROR:", str(e))
+        print("SERVER ERROR:", e)
         traceback.print_exc()
         return f"error: {str(e)}", 500
 
 
 # ================= RUN =================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
