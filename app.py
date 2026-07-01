@@ -2,37 +2,43 @@ import io
 import os
 import re
 import json
-import base64
 import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from flask import Flask, request, jsonify, render_template, redirect
-from groq import Groq
+from google import genai
+from google.genai.errors import APIError  # Added for precise quota exception handling
 from PIL import Image
 from supabase import create_client
 
 app = Flask(__name__)
 
 # ================= TIMEZONE =================
+# Render's servers run in UTC by default. Pin to Malaysia time explicitly
+# so timestamps match your local clock instead of drifting ~8 hours.
 MY_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 
 # ================= ENV =================
-GROQ_API_KEY  = os.getenv("GROQ_API_KEY")
-SUPABASE_URL  = os.getenv("SUPABASE_URL")
-SUPABASE_KEY  = os.getenv("SUPABASE_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_BUCKET = "scan-images"
 
 # ================= SAFE INIT =================
-client   = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
 if not client:
-    print("WARNING: GROQ_API_KEY missing (AI disabled)")
+    print("WARNING: GEMINI_API_KEY missing (AI disabled)")
 if not supabase:
     print("WARNING: Supabase credentials missing (DB disabled)")
 
 # ================= LOCAL FALLBACK =================
+# NOTE: This directory lives on Render's ephemeral disk. Anything saved here
+# is WIPED whenever the service restarts or spins down from idling. It only
+# exists as a last-resort fallback — the real fix is making the Supabase
+# Storage upload below succeed every time.
 IMAGE_FOLDER = "data/images"
 os.makedirs(IMAGE_FOLDER, exist_ok=True)
 
@@ -40,57 +46,73 @@ os.makedirs(IMAGE_FOLDER, exist_ok=True)
 # ================= HELPERS =================
 
 def extract_json(text):
-    """Robustly extract JSON from AI response even if wrapped in markdown fences."""
+    """Robustly extract JSON from Gemini response, even if wrapped in markdown fences."""
     if not text:
         return None
+
     text = text.strip()
+
+    # Remove ```json ... ``` or ``` ... ``` fences
     text = re.sub(r"```json\s*", "", text)
     text = re.sub(r"```\s*", "", text)
     text = text.strip()
+
+    # Try direct parse first
     try:
         return json.loads(text)
     except Exception:
         pass
+
+    # Try to find JSON object using regex
     match = re.search(r'\{.*?\}', text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group())
         except Exception:
             pass
+
     return None
 
 
 def upload_image_to_supabase(image_bytes, filename):
-    """Upload image to Supabase Storage. Returns public URL or None."""
+    """Upload image to Supabase Storage. Returns public URL or None.
+
+    If this keeps returning None, check the Render logs for the
+    'Supabase Storage upload failed' line printed below — that will show
+    the real exception (bad bucket name, missing permissions, wrong key,
+    bucket not public, etc). Every image currently on the dashboard is
+    coming from the local fallback, which means this call is failing.
+    """
     if not supabase:
-        print("Supabase Storage upload skipped: client not configured")
+        print("Supabase Storage upload skipped: supabase client not configured")
         return None
     try:
-        # Delete first to avoid conflicts (upsert can fail silently)
-        try:
-            supabase.storage.from_(SUPABASE_BUCKET).remove([filename])
-        except Exception:
-            pass
-
         supabase.storage.from_(SUPABASE_BUCKET).upload(
             path=filename,
             file=image_bytes,
-            file_options={"content-type": "image/jpeg"}
+            file_options={"content-type": "image/jpeg", "upsert": "true"}
         )
         public_url = supabase.storage.from_(SUPABASE_BUCKET).get_public_url(filename)
-        print(f"Storage OK: {public_url}")
+        print(f"Supabase Storage URL: {public_url}")
         return public_url
     except Exception as e:
-        print(f"Storage FAILED: {type(e).__name__}: {e}")
+        # Full traceback so the real cause shows up in Render logs instead
+        # of just the exception's string repr.
+        print(f"Supabase Storage upload failed: {e}")
         traceback.print_exc()
         return None
 
 
 def fetch_all_scans():
-    """Fetch every row from the scans table using pagination."""
-    all_logs  = []
+    """Fetch every row from the 'scans' table, paginating past whatever
+    row cap Supabase's PostgREST layer enforces (Project Settings -> API
+    -> Max Rows, commonly 1000, sometimes lower). Without this, a single
+    .select("*") silently truncates at that server-side limit no matter
+    what your Python code says.
+    """
+    all_logs = []
     page_size = 1000
-    start     = 0
+    start = 0
     while True:
         response = (
             supabase.table("scans")
@@ -125,23 +147,27 @@ def parse_result(result):
 
 
 def prepare_log(log):
-    result_raw  = log.get("Result") or log.get("result") or ""
+    result_raw = log.get("Result") or log.get("result") or ""
     result_data = parse_result(result_raw)
+
     device_type = log.get("device_type") or "leaf_cam"
 
     prepared = dict(log)
-    prepared["status"]      = result_data.get("status", "unknown")
-    prepared["diagnosis"]   = result_data.get("diagnosis", "")
-    prepared["cause"]       = result_data.get("cause", "")
-    prepared["solution"]    = result_data.get("solution", "")
-    prepared["confidence"]  = (
-        log.get("Confidence") or log.get("confidence") or
+    prepared["result_data"] = result_data
+    prepared["status"] = result_data.get("status", "unknown")
+    prepared["diagnosis"] = result_data.get("diagnosis", "")
+    prepared["cause"] = result_data.get("cause", "")
+    prepared["solution"] = result_data.get("solution", "")
+    prepared["confidence"] = (
+        log.get("Confidence") or
+        log.get("confidence") or
         result_data.get("confidence", "--")
     )
-    prepared["time"]         = log.get("Time") or log.get("time") or "--"
-    prepared["device_type"]  = device_type
+    prepared["time"] = log.get("Time") or log.get("time") or "--"
+    prepared["device_type"] = device_type
     prepared["device_label"] = "Chili Cam" if device_type == "chili_cam" else "Leaf Cam"
 
+    # Prioritize cloud URL from DB first, fall back to local route if empty
     image_url = log.get("image_url")
     if not image_url and log.get("image"):
         image_url = f"/image/{log['image']}"
@@ -182,16 +208,16 @@ def dashboard():
     logs = [prepare_log(log) for log in logs]
 
     latest_chili = latest_for(logs, "chili_cam")
-    latest_leaf  = latest_for(logs, "leaf_cam")
+    latest_leaf = latest_for(logs, "leaf_cam")
 
     chili_logs = [l for l in logs if l.get("device_type") == "chili_cam"]
-    leaf_logs  = [l for l in logs if l.get("device_type") == "leaf_cam"]
+    leaf_logs = [l for l in logs if l.get("device_type") == "leaf_cam"]
 
-    chili_issues          = sum(1 for l in chili_logs if is_problem(l))
-    leaf_issues           = sum(1 for l in leaf_logs  if is_problem(l))
-    healthy_count         = sum(1 for l in logs if (l.get("status") or "").lower() == "healthy")
-    chili_disease_count   = chili_issues
-    leaf_deficiency_count = leaf_issues
+    chili_issues = sum(1 for l in chili_logs if is_problem(l))
+    leaf_issues = sum(1 for l in leaf_logs if is_problem(l))
+    healthy_count = sum(1 for l in logs if (l.get("status") or "").lower() == "healthy")
+    chili_disease_count = sum(1 for l in chili_logs if is_problem(l))
+    leaf_deficiency_count = sum(1 for l in leaf_logs if is_problem(l))
 
     return render_template(
         "dashboard.html",
@@ -220,16 +246,17 @@ def analyze():
     try:
         image_bytes = request.data
         if not image_bytes:
-            return "error: No image data", 400
+            return jsonify({"status": "error", "message": "No image"}), 400
 
-        raw_device_type = request.headers.get("X-Device-Type", "leaf_cam")
-        device_id       = request.headers.get("X-Device-ID", "unknown")
+        device_type = request.headers.get("X-Device-Type", "leaf_cam")
+        device_id = request.headers.get("X-Device-ID", device_type)
 
-        device_type = "chili_cam" if "chili" in raw_device_type.lower() else "leaf_cam"
+        if device_type not in ["chili_cam", "leaf_cam"]:
+            device_type = "leaf_cam"
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        prefix   = "chili" if device_type == "chili_cam" else "leaf"
+        prefix = "chili" if device_type == "chili_cam" else "leaf"
         filename = f"{prefix}_{datetime.now(MY_TZ).strftime('%Y%m%d_%H%M%S')}.jpg"
 
         # Convert to JPEG bytes
@@ -237,92 +264,79 @@ def analyze():
         image.save(img_buffer, format="JPEG", quality=85)
         img_bytes = img_buffer.getvalue()
 
-        # Try Supabase Storage first
+        # Upload to Supabase Storage
         image_url = upload_image_to_supabase(img_bytes, filename)
 
-        # Local fallback
+        # Fallback: save locally if Supabase upload yields None
+        # (This is lost on every Render restart — see upload_image_to_supabase
+        # docstring above if you keep landing here.)
         if not image_url:
             local_path = os.path.join(IMAGE_FOLDER, filename)
             with open(local_path, "wb") as f:
                 f.write(img_bytes)
             image_url = f"/image/{filename}"
-            print(f"WARNING: Saved locally (temporary, will vanish on redeploy): {filename}")
+            print(f"Saved locally (fallback): {filename}")
 
         # ================= PROMPTS =================
         if device_type == "chili_cam":
-            prompt = (
-                "Analyze this chili fruit image. "
-                "Return ONLY a raw JSON object, no markdown, no code fences, no extra text:\n"
-                '{"status":"healthy or disease","diagnosis":"short name",'
-                '"cause":"short cause","solution":"short solution","confidence":"92%"}'
-            )
+            prompt = """Analyze this chili fruit image. Return ONLY a raw JSON object with no markdown, no code fences, no extra text. Just the JSON:
+{"status": "healthy or disease", "diagnosis": "short name", "cause": "short cause", "solution": "short solution", "confidence": "92%"}"""
         else:
-            prompt = (
-                "Analyze this plant leaf image. "
-                "Return ONLY a raw JSON object, no markdown, no code fences, no extra text:\n"
-                '{"status":"healthy or deficiency","diagnosis":"short name",'
-                '"cause":"short cause","solution":"short solution","confidence":"90%"}'
-            )
+            prompt = """Analyze this plant leaf image. Return ONLY a raw JSON object with no markdown, no code fences, no extra text. Just the JSON:
+{"status": "healthy or deficiency", "diagnosis": "short name", "cause": "short cause", "solution": "short solution", "confidence": "90%"}"""
 
-        # ================= AI (GROQ VISION) =================
+        # ================= AI =================
         result_json = None
         if client:
             try:
-                base64_image = base64.b64encode(img_bytes).decode("utf-8")
-
-                response = client.chat.completions.create(
-                    model="meta-llama/llama-4-scout-17b-16e-instruct",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{base64_image}"
-                                    }
-                                }
-                            ]
-                        }
-                    ],
-                    temperature=0.2
+                pil_image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[pil_image, prompt]
                 )
-
-                raw = response.choices[0].message.content
-                print(f"Groq raw: {raw[:300]}")
+                raw = response.text
+                print(f"Gemini raw response: {raw}")
 
                 result_json = extract_json(raw)
+
                 if not result_json:
-                    raise ValueError(f"Cannot parse JSON from Groq: {raw}")
+                    raise ValueError(f"Could not parse JSON from: {raw}")
 
-                print(f"Parsed OK: {result_json}")
+                print(f"Parsed result: {result_json}")
 
-            except Exception as e:
-                err = str(e)
-                print(f"Groq Error: {err}")
-                traceback.print_exc()
-
-                if "429" in err or "rate_limit" in err.lower() or "quota" in err.lower():
+            except APIError as ae:
+                # Catch Gemini free-tier quota exceptions specifically
+                if "429" in str(ae) or "RESOURCE_EXHAUSTED" in str(ae):
+                    print("Gemini Error: Quota exceeded (Free tier limit reached)")
                     result_json = {
-                        "status": "error",
-                        "diagnosis": "Groq rate limit hit",
-                        "cause": "Too many requests. Free Groq tier has per-minute limits.",
-                        "solution": "Wait a few minutes then retry, or increase scan interval.",
+                        "status": "warning",
+                        "diagnosis": "AI Quota Exceeded",
+                        "cause": "Free-tier limit of 20 requests/day reached.",
+                        "solution": "Wait for quota reset or upgrade Gemini key.",
                         "confidence": "--"
                     }
                 else:
+                    print("Gemini API Error:", ae)
                     result_json = {
                         "status": "error",
                         "diagnosis": "AI analysis failed",
-                        "cause": err[:200],
-                        "solution": "Check Render logs or retry the scan",
+                        "cause": str(ae),
+                        "solution": "Retry the scan",
                         "confidence": "--"
                     }
+            except Exception as e:
+                print("Gemini Generic Error:", e)
+                result_json = {
+                    "status": "error",
+                    "diagnosis": "AI analysis failed",
+                    "cause": str(e),
+                    "solution": "Retry the scan",
+                    "confidence": "--"
+                }
         else:
             result_json = {
                 "status": "debug",
-                "diagnosis": "No Groq key configured",
+                "diagnosis": "No Gemini key configured",
                 "cause": "",
                 "solution": "",
                 "confidence": "--"
@@ -332,30 +346,37 @@ def analyze():
 
         # ================= DB INSERT =================
         entry = {
-            "Time":        time_now,
-            "Result":      json.dumps(result_json),
-            "Confidence":  result_json.get("confidence", "--"),
-            "image":       filename,
-            "image_url":   image_url,
+            "Time": time_now,
+            "Result": json.dumps(result_json),
+            "Confidence": result_json.get("confidence", "--"),
+            "image": filename,
+            "image_url": image_url,
             "device_type": device_type,
-            "device_id":   device_id,
+            "device_id": device_id,
         }
 
         if supabase:
             try:
                 supabase.table("scans").insert(entry).execute()
-                print(f"DB insert OK [{device_type}]: {filename}")
+                print(f"Saved to Supabase DB [{device_type}]: {filename}")
             except Exception as e:
-                print(f"DB insert error: {e}")
+                print("Supabase Insert Error:", e)
                 traceback.print_exc()
 
-        # Return raw JSON string so Arduino can scan for keywords
-        return json.dumps(result_json), 200
+        return jsonify({
+            "status": "success",
+            "device_type": device_type,
+            "device_id": device_id,
+            "result": result_json,
+            "image": filename,
+            "image_url": image_url,
+            "time": time_now
+        })
 
     except Exception as e:
-        print(f"SERVER ERROR: {e}")
+        print("SERVER ERROR:", str(e))
         traceback.print_exc()
-        return f"error: {str(e)}", 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 # ================= RUN =================
