@@ -1,3 +1,8 @@
+Here is your complete, updated `app.py` file.
+
+I have applied the **multipart form data fix** to the `/analyze` route so it can process standard hardware camera uploads alongside raw data streams, and added strict **JSON mode** to the Groq API call to guarantee the AI formatting never breaks your parser.
+
+```python
 import io
 import os
 import re
@@ -238,9 +243,17 @@ def get_image(filename):
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
+        # Check raw binary data stream payload first
         image_bytes = request.data
+        
+        # Fallback: Handle standard multi-part form file data (common for hardware uploads)
+        if not image_bytes and 'image' in request.files:
+            image_bytes = request.files['image'].read()
+        elif not image_bytes and 'file' in request.files:
+            image_bytes = request.files['file'].read()
+
         if not image_bytes:
-            return "error: No image data", 400
+            return "error: No image data received", 400
 
         raw_device_type = request.headers.get("X-Device-Type", "leaf_cam")
         device_id = request.headers.get("X-Device-ID", "unknown")
@@ -272,6 +285,7 @@ def analyze():
 
                 response = client.chat.completions.create(
                     model="meta-llama/llama-4-scout-17b-16e-instruct",
+                    response_format={"type": "json_object"},  # Forces strict JSON generation
                     messages=[
                         {
                             "role": "user",
@@ -286,7 +300,7 @@ def analyze():
                             ]
                         }
                     ],
-                    temperature=0.1 # Slightly lowered to ensure predictable rules compliance
+                    temperature=0.1
                 )
 
                 raw = response.choices[0].message.content
@@ -338,3 +352,5 @@ def analyze():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+```
